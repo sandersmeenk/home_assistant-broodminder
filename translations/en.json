@@ -1,0 +1,7 @@
+{
+  "config": {
+    "abort": {
+      "not_broodminder": "Not a BroodMinder device."
+    }
+  }
+}

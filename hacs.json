@@ -1,0 +1,7 @@
+{
+  "name": "BroodMinder",
+  "render_readme": true,
+  "domains": ["broodminder"],
+  "country": "all",
+  "homeassistant": "2024.8.0"
+}

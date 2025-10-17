@@ -1,0 +1,17 @@
+[project]
+name = "homeassistant-broodminder"
+version = "0.2.0"
+description = "Home Assistant custom integration for BroodMinder BLE advertisements"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = [
+  "custom_components"
+]
