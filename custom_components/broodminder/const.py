@@ -1,3 +1,5 @@
+"""Constants for the BroodMinder integration."""
+
 DOMAIN = "broodminder"
 
 MANUFACTURER_ID = 0x028D  # IF, LLC (BroodMinder)

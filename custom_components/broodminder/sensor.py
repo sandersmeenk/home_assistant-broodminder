@@ -1,10 +1,13 @@
+"""Platform for sensor integration."""
+
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
+import logging
 
 from homeassistant import config_entries
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
     PassiveBluetoothDataUpdate,
@@ -12,36 +15,22 @@ from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothProcessorCoordinator,
     PassiveBluetoothProcessorEntity,
 )
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorDeviceClass,
-    SensorStateClass,
-)
-from homeassistant.const import UnitOfTemperature, PERCENTAGE
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.components import bluetooth
+from homeassistant.helpers.entity import EntityDescription
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    DOMAIN,
-    MANUFACTURER_ID,
-    MANUFACTURER,
-    SENSOR_TEMP,
-    SENSOR_HUM,
-    SENSOR_BATT,
-)
-from .ble_parser import parse_manufacturer_data, extract_entities, ParsedAdv
+from .ble_parser import ParsedAdv, extract_entities, parse_manufacturer_data
+from .const import DOMAIN, MANUFACTURER, MANUFACTURER_ID, SENSOR_BATT, SENSOR_HUM, SENSOR_TEMP
 
 _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class BMDescriptions:
-    temperature: EntityDescription = EntityDescription(
-        key=SENSOR_TEMP, icon="mdi:thermometer"
-    )
+    temperature: EntityDescription = EntityDescription(key=SENSOR_TEMP, icon="mdi:thermometer")
     humidity: EntityDescription = EntityDescription(
         key=SENSOR_HUM,
         icon="mdi:water-percent",
@@ -71,7 +60,7 @@ def _to_update(parsed: ParsedAdv) -> PassiveBluetoothDataUpdate[float | int]:
     entity_data: Mapping[PassiveBluetoothEntityKey, float | int] = {}
     entity_names: Mapping[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: float | int, description: EntityDescription, name: str):
+    def add(key: str, value: float, description: EntityDescription, name: str):
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
@@ -109,9 +98,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up BroodMinder sensors."""
-    coordinator: PassiveBluetoothProcessorCoordinator = hass.data[DOMAIN][
-        entry.entry_id
-    ]
+    coordinator: PassiveBluetoothProcessorCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     processor = BroodMinderProcessor()
 
@@ -128,9 +115,7 @@ async def async_setup_entry(
     ) -> None:
         if MANUFACTURER_ID not in service_info.manufacturer_data:
             return
-        parsed = parse_manufacturer_data(
-            service_info.address, service_info.manufacturer_data
-        )
+        parsed = parse_manufacturer_data(service_info.address, service_info.manufacturer_data)
         if not parsed:
             return
         processor.async_on_update(parsed)

@@ -1,0 +1,55 @@
+{
+    "name": "BroodMinder integration development",
+    "image": "mcr.microsoft.com/devcontainers/python:3.13",
+    "postCreateCommand": "scripts/setup",
+    "forwardPorts": [
+        8123
+    ],
+    "portsAttributes": {
+        "8123": {
+            "label": "Home Assistant",
+            "onAutoForward": "notify"
+        }
+    },
+    "mounts": [
+        // To add support for git with ssh in the dev container, uncomment the line below.
+        // "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "charliermarsh.ruff",
+                "github.vscode-pull-request-github",
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ryanluker.vscode-coverage-gutters",
+                "visualstudioexptteam.vscodeintellicode"
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff"
+                },
+                "editor.formatOnPaste": true,
+                "editor.formatOnSave": false,
+                "editor.formatOnType": true,
+                "editor.tabSize": 4,
+                "files.eol": "\n",
+                "files.trimTrailingWhitespace": true,
+                "python.analysis.autoImportCompletions": true,
+                "python.analysis.extraPaths": [
+                    "/home/vscode/.local/lib/python3.13/site-packages"
+                ],
+                "python.analysis.typeCheckingMode": "basic",
+                "python.defaultInterpreterPath": "/usr/local/bin/python"
+            }
+        }
+    },
+    "remoteUser": "vscode",
+    "features": {
+        "ghcr.io/devcontainers-extra/features/apt-packages:1": {
+            "packages": [
+                "libpcap-dev"
+            ]
+        }
+    }
+}

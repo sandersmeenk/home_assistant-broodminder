@@ -1,0 +1,74 @@
+# The contents of this file is based on https://github.com/home-assistant/core/blob/dev/pyproject.toml
+
+target-version = "py313"
+line-length = 98
+
+[lint]
+select = [
+    "ALL",
+]
+
+# Here we specify the rules we want to ignore. Its fully possible to add more
+# rules here if necessary. If in doubt, please check the Home Assistant
+# rule list. If they use excepmt for a rule, we should use it too.
+#   https://github.com/home-assistant/core/blob/dev/pyproject.toml#L652
+ignore = [
+    "ARG001", # unused-argument - generic callbacks and setup methods create a lot of warnings (from tool.pylint."MESSAGES CONTROL")
+    "ARG002", # Same as above
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "BLE001", # Do not catch blind exception: `Exception` (from broad-except in tool.pylint."MESSAGES CONTROL")
+    "COM812", # incompatible with formatter
+    "D202",   # No blank lines allowed after function docstring
+    "D203",   # no-blank-line-before-class (incompatible with formatter)
+    "D212",   # multi-line-summary-first-line (incompatible with formatter)
+    "D213",   # Multi-line docstring summary should start at the second line
+    "ISC001", # incompatible with formatter
+
+    "PLR0911", # Too many return statements ({returns} > {max_returns})
+    "PLR0912", # Too many branches ({branches} > {max_branches})
+    "PLR0913", # Too many arguments to function call ({c_args} > {max_args})
+    "PLR0915", # Too many statements ({statements} > {max_statements})
+
+    # Moving imports into type-checking blocks can mess with pytest.patch()
+    "TC001", # Move application import {} into a type-checking block
+    "TC002", # Move third-party import {} into a type-checking block
+    "TC003", # Move standard library import {} into a type-checking block
+
+    "TRY003", # Avoid specifying long messages outside the exception class
+    "TRY400", # Use `logging.exception` instead of `logging.error`
+
+    # definitely skipped in HA, not obvious how
+    "EM101",  # Exception must not use a string literal, assign to variable first
+    "EM102",  # Exception must not use an f-string literal, assign to variable first
+    "FBT001", # Boolean-typed positional argument in function definition
+    "FBT002", # Boolean default positional argument in function definition
+]
+
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[lint.pyupgrade]
+keep-runtime-typing = true
+
+[lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+split-on-trailing-comma = false
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",  # Allow assert in tests
+    "INP001",  # Don't complain over missing __init__.py in test dirs
+]
+"scripts/*" = [
+    "D103",  # Don't complain over missing docstrings in scripts
+    "T201",  # Allow for scripts to write to stdout
+]
+
+[lint.mccabe]
+max-complexity = 25
+
+[lint.pydocstyle]
+convention = "google"
+property-decorators = ["propcache.api.cached_property"]

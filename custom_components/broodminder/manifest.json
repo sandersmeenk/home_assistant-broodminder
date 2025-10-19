@@ -1,7 +1,6 @@
 {
   "domain": "broodminder",
   "name": "BroodMinder",
-  "version": "0.1.0",
   "documentation": "https://github.com/sandersmeenk/home_assistant-broodminder",
   "issue_tracker": "https://github.com/sandersmeenk/home_assistant-broodminder/issues",
   "codeowners": ["@sandersmeenk"],
@@ -16,10 +15,6 @@
       "connectable": false
     }
   ],
-  "zeroconf": [],
-  "usb": [],
   "config_flow": true,
-  "loggers": ["custom_components.broodminder"],
-  "is_built_in": false,
-  "min_homeassistant_version": "2024.8.0"
+  "version": "0.0.1"
 }

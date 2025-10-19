@@ -1,17 +1,17 @@
+"""Tests for broodminder/ble_parser.py."""
+
 import math
-from custom_components.broodminder.ble_parser import (
-    parse_manufacturer_data,
-    extract_entities,
-)
+
+from custom_components.broodminder.ble_parser import extract_entities, parse_manufacturer_data
 from custom_components.broodminder.const import (
     MANUFACTURER_ID,
-    SENSOR_TEMP,
-    SENSOR_HUM,
     SENSOR_BATT,
+    SENSOR_HUM,
+    SENSOR_TEMP,
 )
 
 
-def test_parse_special_temp_model_no_humidity():
+def test_parse_special_temp_model_no_humidity() -> None:
     # Model 41 uses the special 16-bit scale; humidity not present for this model
     # payload indices: 0:model, 1:ver minor, 2:ver major, 4:battery, 7-8:temp, 14:humidity
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
@@ -35,14 +35,10 @@ def test_parse_special_temp_model_no_humidity():
     assert math.isclose(parsed.temperature_c, 42.5, rel_tol=1e-3, abs_tol=1e-3)
 
     entities = extract_entities(parsed)
-    assert (
-        SENSOR_TEMP in entities
-        and SENSOR_BATT in entities
-        and SENSOR_HUM not in entities
-    )
+    assert SENSOR_TEMP in entities and SENSOR_BATT in entities and SENSOR_HUM not in entities
 
 
-def test_parse_default_temp_and_humidity():
+def test_parse_default_temp_and_humidity() -> None:
     # Model 60 uses default centi-C with +5000 offset
     # raw = 0x1403 = 5123 -> (5123 - 5000)/100 = 1.23 C
     payload = bytearray(15)
@@ -64,6 +60,6 @@ def test_parse_default_temp_and_humidity():
     assert abs(parsed.temperature_c - 1.23) < 1e-6
 
 
-def test_invalid_payload_returns_none():
+def test_invalid_payload_returns_none() -> None:
     parsed = parse_manufacturer_data("AA", {MANUFACTURER_ID: b"\x00\x01"})
     assert parsed is None

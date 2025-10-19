@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+if [ "$1" = "ci" ]; then
+    # Don't try to fix errors, just fail
+    ruff format . --diff
+    ruff check . --exit-zero
+    # ruff check .
+else
+    # Auto-fix as much as possible
+    ruff format .
+    ruff check . --fix
+fi

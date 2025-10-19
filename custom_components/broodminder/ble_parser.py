@@ -1,19 +1,21 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Any
+
 from .const import (
-    MANUFACTURER_ID,
-    IDX_MODEL,
     IDX_BATTERY,
-    IDX_TEMP_L,
-    IDX_TEMP_H,
     IDX_HUMIDITY,
-    SPECIAL_TEMP_MODELS_F,
-    NO_HUMIDITY_MODELS,
-    SENSOR_TEMP,
-    SENSOR_HUM,
-    SENSOR_BATT,
+    IDX_MODEL,
+    IDX_TEMP_H,
+    IDX_TEMP_L,
     MANUFACTURER,
+    MANUFACTURER_ID,
+    NO_HUMIDITY_MODELS,
+    SENSOR_BATT,
+    SENSOR_HUM,
+    SENSOR_TEMP,
+    SPECIAL_TEMP_MODELS_F,
 )
 
 
@@ -24,18 +26,16 @@ class ParsedAdv:
     address: str
     model: int
     firmware: str | None
-    temperature_c: Optional[float]
-    humidity_percent: Optional[int]
-    battery_percent: Optional[int]
+    temperature_c: float | None
+    humidity_percent: int | None
+    battery_percent: int | None
     device_name: str
     device_id: str  # address or BroodMinder ID string
 
 
-def _parse_temperature_c(model: int, lo: int, hi: int) -> Optional[float]:
+def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
     raw = lo | (hi << 8)
-    if (
-        raw == 0xFFFF
-    ):  # sometimes weight fields use 0x7FFF/0x8005; treat 0xFFFF as invalid temp
+    if raw == 0xFFFF:  # sometimes weight fields use 0x7FFF/0x8005; treat 0xFFFF as invalid temp
         return None
     if model in SPECIAL_TEMP_MODELS_F:
         # From BroodMinder doc: for models 41/42/43, raw is 16-bit where:
@@ -47,9 +47,7 @@ def _parse_temperature_c(model: int, lo: int, hi: int) -> Optional[float]:
     return (raw - 5000) / 100.0
 
 
-def parse_manufacturer_data(
-    address: str, mfg_data: Dict[int, bytes]
-) -> Optional[ParsedAdv]:
+def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> ParsedAdv | None:
     payload = mfg_data.get(MANUFACTURER_ID)
     if not payload or len(payload) < 15:  # need up to humidity byte
         return None
@@ -86,9 +84,9 @@ def parse_manufacturer_data(
     )
 
 
-def extract_entities(parsed: ParsedAdv) -> Dict[str, Any]:
+def extract_entities(parsed: ParsedAdv) -> dict[str, Any]:
     """Return a key->value map for entities."""
-    data: Dict[str, Any] = {}
+    data: dict[str, Any] = {}
     if parsed.temperature_c is not None:
         data[SENSOR_TEMP] = parsed.temperature_c
     if parsed.humidity_percent is not None:

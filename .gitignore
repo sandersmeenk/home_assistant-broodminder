@@ -1,7 +1,29 @@
-__pycache__/
-*.pyc
-*.pyo
-*.DS_Store
-.venv/
+# artifacts
+__pycache__
+.pytest*
+*.egg-info
+*/build/*
+*/dist/*
+
+# misc
 .coverage
-.pytest_cache/
+.vscode
+coverage.xml
+.ruff_cache
+htmlcov/
+
+# Home Assistant configuration
+config/*
+!config/configuration.yaml
+
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Python virtual environments
+venv*/
+.venv*/
+/.python-version

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
 from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.data_entry_flow import FlowResult
+
 from .const import DOMAIN, MANUFACTURER_ID
 
 

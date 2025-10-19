@@ -1,0 +1,9 @@
+colorlog==6.9.0
+homeassistant==2025.9.4
+pip>=25.0
+ruff==0.13.1
+
+# Copy from manifest.json to get this into the dev container
+# without needing to start HA
+pydantic==2.12.0
+aiolimiter==1.2.1

@@ -8,12 +8,13 @@ A zero-pairing, **advertisement-only** integration for BroodMinder devices. It l
 
 It uses Home Assistant’s shared Bluetooth scanner (Bleak) and the PassiveBluetooth* processor pattern for efficient, multi-proxy setups.
 
-## Install
+# Installation and setup
 
-1. Copy `custom_components/broodminder/` to `<config>/custom_components/broodminder/` (or add this repo to HACS as a custom repository).
-2. Restart Home Assistant.
-3. Put a BroodMinder device near any HA Bluetooth adapter or BLE proxy (ESPHome, Shelly, etc.).
-4. The device should be discovered automatically; accept the config flow. Entities appear under the BroodMinder device.
+This integration is available in HACS (Home Assistant Community Store).
+
+Just click the badge below:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sandersmeenk&repository=home_assistant-broodminder)
 
 ## How it works
 

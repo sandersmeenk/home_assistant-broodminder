@@ -5,13 +5,34 @@ description = "Home Assistant custom integration for BroodMinder BLE advertiseme
 readme = "README.md"
 requires-python = ">=3.11"
 
-[project.optional-dependencies]
-test = [
-  "pytest>=8.0.0",
-]
+[tool.ruff]
+required-version = ">=0.13.0"
 
 [tool.pytest.ini_options]
-addopts = "-q"
 pythonpath = [
-  "custom_components"
+    ".",
+]
+testpaths = [
+    "tests",
+]
+log_format = "%(asctime)s.%(msecs)03d %(levelname)-8s %(threadName)s %(name)s:%(filename)s:%(lineno)s %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.report]
+exclude_lines = [
+  # Have to re-enable the standard pragma
+  "pragma: no cover",
+  # Don't complain about missing debug-only code:
+  "def __repr__",
+  # Don't complain if tests don't hit defensive assertion code:
+  "raise AssertionError",
+  "raise NotImplementedError",
+  # TYPE_CHECKING and @overload blocks are never executed during pytest run
+  "if TYPE_CHECKING:",
+  "@overload",
 ]
