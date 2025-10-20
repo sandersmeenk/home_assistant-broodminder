@@ -5,25 +5,40 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import logging
+from typing import Any
 
 from homeassistant import config_entries
-from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
     PassiveBluetoothDataUpdate,
     PassiveBluetoothEntityKey,
-    PassiveBluetoothProcessorCoordinator,
     PassiveBluetoothProcessorEntity,
 )
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityDescription
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .ble_parser import ParsedAdv, extract_entities, parse_manufacturer_data
-from .const import DOMAIN, MANUFACTURER, MANUFACTURER_ID, SENSOR_BATT, SENSOR_HUM, SENSOR_TEMP
+from .ble_parser import ManufacturerData, extract_entities
+from .const import (
+    DOMAIN,
+    MANUFACTURER,
+    SENSOR_BATT,
+    SENSOR_ELAPSED_S,
+    SENSOR_HUM,
+    SENSOR_SWARM_STATE,
+    SENSOR_SWARM_TIME,
+    SENSOR_TEMP,
+    SENSOR_TEMP_RT1,
+    SENSOR_TEMP_RT2,
+    SENSOR_WEIGHT_L,
+    SENSOR_WEIGHT_L2,
+    SENSOR_WEIGHT_R,
+    SENSOR_WEIGHT_R2,
+    SENSOR_WEIGHT_REALTIME,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +46,12 @@ _LOGGER = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class BMDescriptions:
     temperature: EntityDescription = EntityDescription(key=SENSOR_TEMP, icon="mdi:thermometer")
+    temperature_rt1: EntityDescription = EntityDescription(
+        key=SENSOR_TEMP_RT1, icon="mdi:thermometer"
+    )
+    temperature_rt2: EntityDescription = EntityDescription(
+        key=SENSOR_TEMP_RT2, icon="mdi:thermometer"
+    )
     humidity: EntityDescription = EntityDescription(
         key=SENSOR_HUM,
         icon="mdi:water-percent",
@@ -39,12 +60,34 @@ class BMDescriptions:
     battery: EntityDescription = EntityDescription(
         key=SENSOR_BATT, icon="mdi:battery", device_class=SensorDeviceClass.BATTERY
     )
+    elapsed: EntityDescription = EntityDescription(key=SENSOR_ELAPSED_S, icon="mdi:timer-outline")
+    weight_l: EntityDescription = EntityDescription(
+        key=SENSOR_WEIGHT_L, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+    )
+    weight_r: EntityDescription = EntityDescription(
+        key=SENSOR_WEIGHT_R, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+    )
+    weight_l2: EntityDescription = EntityDescription(
+        key=SENSOR_WEIGHT_L2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+    )
+    weight_r2: EntityDescription = EntityDescription(
+        key=SENSOR_WEIGHT_R2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+    )
+    weight_rt: EntityDescription = EntityDescription(
+        key=SENSOR_WEIGHT_REALTIME, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+    )
+    swarm_state: EntityDescription = EntityDescription(key=SENSOR_SWARM_STATE, icon="mdi:bee")
+    swarm_time: EntityDescription = EntityDescription(
+        key=SENSOR_SWARM_TIME, icon="mdi:clock-outline"
+    )
 
 
 DESCRIPTIONS = BMDescriptions()
 
 
-def _to_update(parsed: ParsedAdv) -> PassiveBluetoothDataUpdate[float | int]:
+def sensor_update_to_bluetooth_data_update(
+    parsed: ManufacturerData,
+) -> PassiveBluetoothDataUpdate[Any]:
     """Build a PassiveBluetoothDataUpdate for the processor."""
     entities = extract_entities(parsed)
     device = DeviceInfo(
@@ -57,21 +100,70 @@ def _to_update(parsed: ParsedAdv) -> PassiveBluetoothDataUpdate[float | int]:
     )
 
     entity_descriptions: Mapping[PassiveBluetoothEntityKey, EntityDescription] = {}
-    entity_data: Mapping[PassiveBluetoothEntityKey, float | int] = {}
+    entity_data: Mapping[PassiveBluetoothEntityKey, Any] = {}
     entity_names: Mapping[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: float, description: EntityDescription, name: str):
+    def add(key: str, value: Any, description: EntityDescription, name: str):
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
         entity_names[ek] = name
 
+    # Temperature
     if SENSOR_TEMP in entities:
         add(SENSOR_TEMP, entities[SENSOR_TEMP], DESCRIPTIONS.temperature, "Temperature")
+    if SENSOR_TEMP_RT1 in entities:
+        add(
+            SENSOR_TEMP_RT1,
+            entities[SENSOR_TEMP_RT1],
+            DESCRIPTIONS.temperature_rt1,
+            "Realtime Temp 1",
+        )
+    if SENSOR_TEMP_RT2 in entities:
+        add(
+            SENSOR_TEMP_RT2,
+            entities[SENSOR_TEMP_RT2],
+            DESCRIPTIONS.temperature_rt2,
+            "Realtime Temp 2",
+        )
+
+    # Humidity / Battery / Elapsed
     if SENSOR_HUM in entities:
         add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity, "Humidity")
     if SENSOR_BATT in entities:
         add(SENSOR_BATT, entities[SENSOR_BATT], DESCRIPTIONS.battery, "Battery")
+    if SENSOR_ELAPSED_S in entities:
+        add(SENSOR_ELAPSED_S, entities[SENSOR_ELAPSED_S], DESCRIPTIONS.elapsed, "Elapsed")
+
+    # Weights
+    if SENSOR_WEIGHT_L in entities:
+        add(SENSOR_WEIGHT_L, entities[SENSOR_WEIGHT_L], DESCRIPTIONS.weight_l, "Weight Left")
+    if SENSOR_WEIGHT_R in entities:
+        add(SENSOR_WEIGHT_R, entities[SENSOR_WEIGHT_R], DESCRIPTIONS.weight_r, "Weight Right")
+    if SENSOR_WEIGHT_L2 in entities:
+        add(SENSOR_WEIGHT_L2, entities[SENSOR_WEIGHT_L2], DESCRIPTIONS.weight_l2, "Weight Left 2")
+    if SENSOR_WEIGHT_R2 in entities:
+        add(
+            SENSOR_WEIGHT_R2, entities[SENSOR_WEIGHT_R2], DESCRIPTIONS.weight_r2, "Weight Right 2"
+        )
+    if SENSOR_WEIGHT_REALTIME in entities:
+        add(
+            SENSOR_WEIGHT_REALTIME,
+            entities[SENSOR_WEIGHT_REALTIME],
+            DESCRIPTIONS.weight_rt,
+            "Weight Realtime",
+        )
+
+    # Swarm state & Swarm time
+    if SENSOR_SWARM_STATE in entities:
+        add(
+            SENSOR_SWARM_STATE,
+            entities[SENSOR_SWARM_STATE],
+            DESCRIPTIONS.swarm_state,
+            "Swarm State",
+        )
+    if SENSOR_SWARM_TIME in entities:
+        add(SENSOR_SWARM_TIME, entities[SENSOR_SWARM_TIME], DESCRIPTIONS.swarm_time, "Swarm Time")
 
     return PassiveBluetoothDataUpdate(
         devices={parsed.device_id: device},
@@ -81,78 +173,70 @@ def _to_update(parsed: ParsedAdv) -> PassiveBluetoothDataUpdate[float | int]:
     )
 
 
-class BroodMinderProcessor(PassiveBluetoothDataProcessor[float | int]):
-    """Convert BLE advertisements to HA sensor updates."""
-
-    def __init__(self) -> None:
-        super().__init__(self._update_to_ble)
-
-    @staticmethod
-    def _update_to_ble(parsed: ParsedAdv) -> PassiveBluetoothDataUpdate[float | int]:
-        return _to_update(parsed)
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: config_entries.ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up BroodMinder sensors."""
-    coordinator: PassiveBluetoothProcessorCoordinator = hass.data[DOMAIN][entry.entry_id]
-
-    processor = BroodMinderProcessor()
-
-    # Create entities once we get the first adv for each device
-    entry.async_on_unload(
-        processor.async_add_entities_listener(BroodMinderSensor, async_add_entities)
-    )
-
-    # Register callback to parse incoming advs
-    @bluetooth.callback
-    def _discovered(
-        service_info: bluetooth.BluetoothServiceInfoBleak,
-        change: bluetooth.BluetoothChange,
-    ) -> None:
-        if MANUFACTURER_ID not in service_info.manufacturer_data:
-            return
-        parsed = parse_manufacturer_data(service_info.address, service_info.manufacturer_data)
-        if not parsed:
-            return
-        processor.async_on_update(parsed)
+    """Set up the BroodMinder sensors."""
+    processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
 
     entry.async_on_unload(
-        bluetooth.async_register_callback(
-            hass,
-            _discovered,
-            {"manufacturer_id": MANUFACTURER_ID, "connectable": False},
-            bluetooth.BluetoothScanningMode.ACTIVE,
-        )
+        processor.async_add_entities_listener(BroodMinderSensorEntity, async_add_entities)
     )
 
-    entry.async_on_unload(coordinator.async_register_processor(processor))
+    entry.async_on_unload(entry.runtime_data.async_register_processor(processor))
 
 
-class BroodMinderSensor(PassiveBluetoothProcessorEntity[float | int], SensorEntity):
+class BroodMinderSensorEntity(
+    PassiveBluetoothProcessorEntity[PassiveBluetoothDataProcessor[Any | None, ManufacturerData],],
+    SensorEntity,
+):
     """Entity for a BroodMinder reading."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_unit_of_measurement(self):
-        if self.entity_key.key == SENSOR_TEMP:
+        key = self.entity_key.key
+        if key in (SENSOR_TEMP, SENSOR_TEMP_RT1, SENSOR_TEMP_RT2):
             return UnitOfTemperature.CELSIUS
-        if self.entity_key.key == SENSOR_HUM:
+        if key == SENSOR_HUM:
             return PERCENTAGE
-        if self.entity_key.key == SENSOR_BATT:
+        if key == SENSOR_BATT:
             return PERCENTAGE
+        if key in (
+            SENSOR_WEIGHT_L,
+            SENSOR_WEIGHT_R,
+            SENSOR_WEIGHT_L2,
+            SENSOR_WEIGHT_R2,
+            SENSOR_WEIGHT_REALTIME,
+        ):
+            return UnitOfMass.KILOGRAMS
+        if key == SENSOR_ELAPSED_S:
+            return UnitOfTime.SECONDS
+        if key in (SENSOR_SWARM_TIME, SENSOR_SWARM_STATE):
+            return None
         return None
 
     @property
     def device_class(self):
-        if self.entity_key.key == SENSOR_TEMP:
+        key = self.entity_key.key
+        if key in (SENSOR_TEMP, SENSOR_TEMP_RT1, SENSOR_TEMP_RT2):
             return SensorDeviceClass.TEMPERATURE
-        if self.entity_key.key == SENSOR_HUM:
+        if key == SENSOR_HUM:
             return SensorDeviceClass.HUMIDITY
-        if self.entity_key.key == SENSOR_BATT:
+        if key == SENSOR_BATT:
             return SensorDeviceClass.BATTERY
+        if key in (
+            SENSOR_WEIGHT_L,
+            SENSOR_WEIGHT_R,
+            SENSOR_WEIGHT_L2,
+            SENSOR_WEIGHT_R2,
+            SENSOR_WEIGHT_REALTIME,
+        ):
+            return SensorDeviceClass.WEIGHT
+        if key == SENSOR_SWARM_TIME:
+            return SensorDeviceClass.TIMESTAMP
+        # elapsed/swarm_state: leave without a device class
         return None

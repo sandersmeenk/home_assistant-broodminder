@@ -1,8 +1,10 @@
+"""BroodMinder component."""
+
 from __future__ import annotations
 
 import logging
 
-from homeassistant.components.bluetooth import BluetoothScanningMode
+from homeassistant.components.bluetooth import BluetoothScanningMode, BluetoothServiceInfoBleak
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothProcessorCoordinator,
 )
@@ -10,35 +12,42 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .ble_parser import ManufacturerData, parse_manufacturer_data
+from .const import DOMAIN, MANUFACTURER_ID
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
+def _update_method(service_info: BluetoothServiceInfoBleak) -> ManufacturerData | None:
+    """Parse incoming advertisements into our high-level ManufacturerData."""
+    if MANUFACTURER_ID not in service_info.manufacturer_data:
+        return None
+
+    return parse_manufacturer_data(service_info.address, service_info.manufacturer_data)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up BroodMinder BLE from a config entry."""
     address = entry.unique_id  # Bluetooth device address
 
-    # Our parsing is done in sensor via a PassiveBluetoothDataProcessor; coordinator triggers updates.
-    coordinator = hass.data.setdefault(DOMAIN, {})[entry.entry_id] = (
-        PassiveBluetoothProcessorCoordinator(
-            hass,
-            _LOGGER,
-            address=address,
-            mode=BluetoothScanningMode.ACTIVE,  # ensures we also get scan responses when available
-            update_method=None,  # We parse in processors; coordinator handles routing
-        )
+    coordinator = PassiveBluetoothProcessorCoordinator(
+        hass,
+        _LOGGER,
+        address=address,
+        mode=BluetoothScanningMode.ACTIVE,
+        update_method=_update_method,
     )
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Start after platforms subscribe
     entry.async_on_unload(coordinator.async_start())
 
-    _LOGGER.warning("Initialized BroodMinder %s", address)
-
+    _LOGGER.info("Initialized BroodMinder %s", address)
     return True
 
 

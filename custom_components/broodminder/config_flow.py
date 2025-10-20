@@ -18,6 +18,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle bluetooth discovery."""
         if MANUFACTURER_ID not in discovery_info.manufacturer_data:
             return self.async_abort(reason="not_broodminder")
+
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
 

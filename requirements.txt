@@ -7,3 +7,5 @@ ruff==0.13.1
 # without needing to start HA
 pydantic==2.12.0
 aiolimiter==1.2.1
+aiousbwatcher==1.1.1
+pyserial==3.5
