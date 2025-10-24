@@ -19,7 +19,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -29,8 +29,8 @@ from .const import (
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATT,
-    SENSOR_ELAPSED_S,
     SENSOR_HUM,
+    SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
     SENSOR_SWARM_TIME,
     SENSOR_TEMP,
@@ -65,8 +65,8 @@ class BMDescriptions:
     battery: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_BATT, icon="mdi:battery", device_class=SensorDeviceClass.BATTERY
     )
-    elapsed: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_ELAPSED_S, icon="mdi:timer-outline"
+    sample_count: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_SAMPLE_COUNT, icon="mdi:counter"
     )
     weight_l: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_WEIGHT_L, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
@@ -136,13 +136,18 @@ def sensor_update_to_bluetooth_data_update(
             "Realtime Temp 2",
         )
 
-    # Humidity / Battery / Elapsed
+    # Humidity / Battery / sample count
     if SENSOR_HUM in entities:
         add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity, "Humidity")
     if SENSOR_BATT in entities:
         add(SENSOR_BATT, entities[SENSOR_BATT], DESCRIPTIONS.battery, "Battery")
-    if SENSOR_ELAPSED_S in entities:
-        add(SENSOR_ELAPSED_S, entities[SENSOR_ELAPSED_S], DESCRIPTIONS.elapsed, "Elapsed")
+    if SENSOR_SAMPLE_COUNT in entities:
+        add(
+            SENSOR_SAMPLE_COUNT,
+            entities[SENSOR_SAMPLE_COUNT],
+            DESCRIPTIONS.sample_count,
+            "Sample count",
+        )
 
     # Weights
     if SENSOR_WEIGHT_L in entities:
@@ -230,9 +235,7 @@ class BroodMinderSensorEntity(
             SENSOR_WEIGHT_REALTIME,
         ):
             return UnitOfMass.KILOGRAMS
-        if key == SENSOR_ELAPSED_S:
-            return UnitOfTime.SECONDS
-        # swarm_time (timestamp) and swarm_state (string) => no unit
+        # sample count, swarm_time (timestamp) and swarm_state (string) => no unit
         return None
 
     # Device classes
@@ -255,7 +258,7 @@ class BroodMinderSensorEntity(
             return SensorDeviceClass.WEIGHT
         if key == SENSOR_SWARM_TIME:
             return SensorDeviceClass.TIMESTAMP
-        # elapsed/swarm_state: leave without a device class
+        # sample count,swarm_state: leave without a device class
         return None
 
     # State class: only for numeric measurements (NOT for timestamp or string)
@@ -268,7 +271,6 @@ class BroodMinderSensorEntity(
             SENSOR_TEMP_RT2,
             SENSOR_HUM,
             SENSOR_BATT,
-            SENSOR_ELAPSED_S,
             SENSOR_WEIGHT_L,
             SENSOR_WEIGHT_R,
             SENSOR_WEIGHT_L2,

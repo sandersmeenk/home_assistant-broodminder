@@ -61,7 +61,7 @@ SENSOR_TEMP_RT2 = "temperature_realtime_2"
 SENSOR_HUM = "humidity"
 SENSOR_BATT = "battery"
 
-SENSOR_ELAPSED_S = "elapsed_seconds"
+SENSOR_SAMPLE_COUNT = "sample_count"
 SENSOR_WEIGHT_L = "weight_left"
 SENSOR_WEIGHT_R = "weight_right"
 SENSOR_WEIGHT_L2 = "weight_left_2"

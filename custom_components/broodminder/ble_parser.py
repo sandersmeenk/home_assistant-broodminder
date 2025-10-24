@@ -34,10 +34,10 @@ from .const import (
     MODEL_W3_W4,
     NO_HUMIDITY_MODELS,
     SENSOR_BATT,
-    SENSOR_ELAPSED_S,
     SENSOR_HUM,
     SENSOR_PERCENTAGE_MAXIMUM,
     SENSOR_PERCENTAGE_MINIMUM,
+    SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
     SENSOR_SWARM_TIME,
     SENSOR_TEMP,
@@ -277,7 +277,7 @@ def extract_entities(parsed: ManufacturerData) -> dict[str, Any]:
     if parsed.battery_percent is not None:
         data[SENSOR_BATT] = parsed.battery_percent
     if parsed.elapsed_s is not None:
-        data[SENSOR_ELAPSED_S] = parsed.elapsed_s
+        data[SENSOR_SAMPLE_COUNT] = parsed.elapsed_s
     if parsed.weight_l_kg is not None:
         data[SENSOR_WEIGHT_L] = parsed.weight_l_kg
     if parsed.weight_r_kg is not None:

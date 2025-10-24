@@ -8,8 +8,8 @@ from custom_components.broodminder.ble_parser import extract_entities, parse_man
 from custom_components.broodminder.const import (
     MANUFACTURER_ID,
     SENSOR_BATT,
-    SENSOR_ELAPSED_S,
     SENSOR_HUM,
+    SENSOR_SAMPLE_COUNT,
     # Optional extras we don't strictly assert in values, but we verify presence/absence
     # (left here in case you later want to assert on them)
     # SENSOR_TEMP_RT1,
@@ -161,7 +161,7 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert entities[SENSOR_BATT] == 100
     assert entities[SENSOR_HUM] == 55
     assert math.isclose(entities[SENSOR_TEMP], 1.23, abs_tol=1e-6)
-    assert entities[SENSOR_ELAPSED_S] == 0x1234
+    assert entities[SENSOR_SAMPLE_COUNT] == 0x1234
 
     assert SENSOR_WEIGHT_L not in entities
     assert SENSOR_WEIGHT_R not in entities
@@ -248,7 +248,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert entities[SENSOR_BATT] == 100
     assert entities[SENSOR_HUM] == 55
     assert math.isclose(entities[SENSOR_TEMP], 1.23, abs_tol=1e-6)
-    assert entities[SENSOR_ELAPSED_S] == 0x1234
+    assert entities[SENSOR_SAMPLE_COUNT] == 0x1234
     assert math.isclose(entities[SENSOR_WEIGHT_L], 12.34, abs_tol=1e-6)
     assert math.isclose(entities[SENSOR_WEIGHT_R], 5.00, abs_tol=1e-6)
     assert math.isclose(entities[SENSOR_WEIGHT_REALTIME], 20.00, abs_tol=1e-6)
