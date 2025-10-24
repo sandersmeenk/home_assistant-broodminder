@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -14,11 +13,15 @@ from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothEntityKey,
     PassiveBluetoothProcessorEntity,
 )
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .ble_parser import ManufacturerData, extract_entities
@@ -45,39 +48,45 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class BMDescriptions:
-    temperature: EntityDescription = EntityDescription(key=SENSOR_TEMP, icon="mdi:thermometer")
-    temperature_rt1: EntityDescription = EntityDescription(
+    temperature: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_TEMP, icon="mdi:thermometer"
+    )
+    temperature_rt1: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_TEMP_RT1, icon="mdi:thermometer"
     )
-    temperature_rt2: EntityDescription = EntityDescription(
+    temperature_rt2: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_TEMP_RT2, icon="mdi:thermometer"
     )
-    humidity: EntityDescription = EntityDescription(
+    humidity: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_HUM,
         icon="mdi:water-percent",
         device_class=SensorDeviceClass.HUMIDITY,
     )
-    battery: EntityDescription = EntityDescription(
+    battery: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_BATT, icon="mdi:battery", device_class=SensorDeviceClass.BATTERY
     )
-    elapsed: EntityDescription = EntityDescription(key=SENSOR_ELAPSED_S, icon="mdi:timer-outline")
-    weight_l: EntityDescription = EntityDescription(
+    elapsed: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_ELAPSED_S, icon="mdi:timer-outline"
+    )
+    weight_l: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_WEIGHT_L, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
     )
-    weight_r: EntityDescription = EntityDescription(
+    weight_r: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_WEIGHT_R, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
     )
-    weight_l2: EntityDescription = EntityDescription(
+    weight_l2: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_WEIGHT_L2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
     )
-    weight_r2: EntityDescription = EntityDescription(
+    weight_r2: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_WEIGHT_R2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
     )
-    weight_rt: EntityDescription = EntityDescription(
+    weight_rt: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_WEIGHT_REALTIME, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
     )
-    swarm_state: EntityDescription = EntityDescription(key=SENSOR_SWARM_STATE, icon="mdi:bee")
-    swarm_time: EntityDescription = EntityDescription(
+    swarm_state: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_SWARM_STATE, icon="mdi:bee"
+    )
+    swarm_time: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_SWARM_TIME, icon="mdi:clock-outline"
     )
 
@@ -99,11 +108,11 @@ def sensor_update_to_bluetooth_data_update(
         sw_version=parsed.firmware,
     )
 
-    entity_descriptions: Mapping[PassiveBluetoothEntityKey, EntityDescription] = {}
-    entity_data: Mapping[PassiveBluetoothEntityKey, Any] = {}
-    entity_names: Mapping[PassiveBluetoothEntityKey, str | None] = {}
+    entity_descriptions: dict[PassiveBluetoothEntityKey, SensorEntityDescription] = {}
+    entity_data: dict[PassiveBluetoothEntityKey, Any] = {}
+    entity_names: dict[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: Any, description: EntityDescription, name: str):
+    def add(key: str, value: Any, description: SensorEntityDescription, name: str):
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
@@ -181,11 +190,15 @@ async def async_setup_entry(
     """Set up the BroodMinder sensors."""
     processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
 
+    # Entities subscribe first
     entry.async_on_unload(
         processor.async_add_entities_listener(BroodMinderSensorEntity, async_add_entities)
     )
 
+    # Get coordinator stored by __init__.py
     coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Register the processor with the coordinator
     entry.async_on_unload(coordinator.async_register_processor(processor))
 
 
