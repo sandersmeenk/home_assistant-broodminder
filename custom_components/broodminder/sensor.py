@@ -190,7 +190,7 @@ async def async_setup_entry(
     """Set up the BroodMinder sensors."""
     processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
 
-    # Entities subscribe first
+    # Create entities when new keys appear
     entry.async_on_unload(
         processor.async_add_entities_listener(BroodMinderSensorEntity, async_add_entities)
     )
@@ -208,16 +208,19 @@ class BroodMinderSensorEntity(
 ):
     """Entity for a BroodMinder reading."""
 
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # Provide the current value from the processor
+    @property
+    def native_value(self):
+        # For timestamp sensors, ensure extract_entities() returns a datetime
+        return self.processor.entity_data.get(self.entity_key)
 
+    # Units
     @property
     def native_unit_of_measurement(self):
         key = self.entity_key.key
         if key in (SENSOR_TEMP, SENSOR_TEMP_RT1, SENSOR_TEMP_RT2):
             return UnitOfTemperature.CELSIUS
-        if key == SENSOR_HUM:
-            return PERCENTAGE
-        if key == SENSOR_BATT:
+        if key in (SENSOR_HUM, SENSOR_BATT):
             return PERCENTAGE
         if key in (
             SENSOR_WEIGHT_L,
@@ -229,10 +232,10 @@ class BroodMinderSensorEntity(
             return UnitOfMass.KILOGRAMS
         if key == SENSOR_ELAPSED_S:
             return UnitOfTime.SECONDS
-        if key in (SENSOR_SWARM_TIME, SENSOR_SWARM_STATE):
-            return None
+        # swarm_time (timestamp) and swarm_state (string) => no unit
         return None
 
+    # Device classes
     @property
     def device_class(self):
         key = self.entity_key.key
@@ -253,4 +256,25 @@ class BroodMinderSensorEntity(
         if key == SENSOR_SWARM_TIME:
             return SensorDeviceClass.TIMESTAMP
         # elapsed/swarm_state: leave without a device class
+        return None
+
+    # State class: only for numeric measurements (NOT for timestamp or string)
+    @property
+    def state_class(self):
+        key = self.entity_key.key
+        if key in (
+            SENSOR_TEMP,
+            SENSOR_TEMP_RT1,
+            SENSOR_TEMP_RT2,
+            SENSOR_HUM,
+            SENSOR_BATT,
+            SENSOR_ELAPSED_S,
+            SENSOR_WEIGHT_L,
+            SENSOR_WEIGHT_R,
+            SENSOR_WEIGHT_L2,
+            SENSOR_WEIGHT_R2,
+            SENSOR_WEIGHT_REALTIME,
+        ):
+            return SensorStateClass.MEASUREMENT
+        # timestamp and swarm_state should not have a state_class
         return None
