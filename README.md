@@ -10,11 +10,13 @@ It uses Home Assistant’s shared Bluetooth scanner (Bleak) and the PassiveBluet
 
 # Installation and setup
 
-This integration is available in HACS (Home Assistant Community Store).
+This integration can be installed through HACS (Home Assistant Community Store).
+
+https://www.hacs.xyz/docs/use/download/download/
 
 Just click the badge below:
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sandersmeenk&repository=home_assistant-broodminder)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sandersmeenk&repository=home_assistant-broodminder&category=integration)
 
 ## How it works
 
