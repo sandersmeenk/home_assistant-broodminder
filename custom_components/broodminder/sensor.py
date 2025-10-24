@@ -185,7 +185,8 @@ async def async_setup_entry(
         processor.async_add_entities_listener(BroodMinderSensorEntity, async_add_entities)
     )
 
-    entry.async_on_unload(entry.runtime_data.async_register_processor(processor))
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    entry.async_on_unload(coordinator.async_register_processor(processor))
 
 
 class BroodMinderSensorEntity(
