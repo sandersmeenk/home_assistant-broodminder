@@ -34,8 +34,7 @@ from .const import (
     SENSOR_SWARM_STATE,
     SENSOR_SWARM_TIME,
     SENSOR_TEMP,
-    SENSOR_TEMP_RT1,
-    SENSOR_TEMP_RT2,
+    SENSOR_TEMP_RT,
     SENSOR_WEIGHT_L,
     SENSOR_WEIGHT_L2,
     SENSOR_WEIGHT_R,
@@ -51,11 +50,8 @@ class BMDescriptions:
     temperature: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_TEMP, icon="mdi:thermometer"
     )
-    temperature_rt1: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_TEMP_RT1, icon="mdi:thermometer"
-    )
-    temperature_rt2: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_TEMP_RT2, icon="mdi:thermometer"
+    temperature_rt: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_TEMP_RT, icon="mdi:thermometer"
     )
     humidity: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_HUM,
@@ -121,19 +117,9 @@ def sensor_update_to_bluetooth_data_update(
     # Temperature
     if SENSOR_TEMP in entities:
         add(SENSOR_TEMP, entities[SENSOR_TEMP], DESCRIPTIONS.temperature, "Temperature")
-    if SENSOR_TEMP_RT1 in entities:
+    if SENSOR_TEMP_RT in entities:
         add(
-            SENSOR_TEMP_RT1,
-            entities[SENSOR_TEMP_RT1],
-            DESCRIPTIONS.temperature_rt1,
-            "Realtime Temp 1",
-        )
-    if SENSOR_TEMP_RT2 in entities:
-        add(
-            SENSOR_TEMP_RT2,
-            entities[SENSOR_TEMP_RT2],
-            DESCRIPTIONS.temperature_rt2,
-            "Realtime Temp 2",
+            SENSOR_TEMP_RT, entities[SENSOR_TEMP_RT], DESCRIPTIONS.temperature_rt, "Realtime Temp"
         )
 
     # Humidity / Battery / sample count
@@ -223,7 +209,7 @@ class BroodMinderSensorEntity(
     @property
     def native_unit_of_measurement(self):
         key = self.entity_key.key
-        if key in (SENSOR_TEMP, SENSOR_TEMP_RT1, SENSOR_TEMP_RT2):
+        if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return UnitOfTemperature.CELSIUS
         if key in (SENSOR_HUM, SENSOR_BATT):
             return PERCENTAGE
@@ -242,7 +228,7 @@ class BroodMinderSensorEntity(
     @property
     def device_class(self):
         key = self.entity_key.key
-        if key in (SENSOR_TEMP, SENSOR_TEMP_RT1, SENSOR_TEMP_RT2):
+        if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return SensorDeviceClass.TEMPERATURE
         if key == SENSOR_HUM:
             return SensorDeviceClass.HUMIDITY
@@ -267,8 +253,7 @@ class BroodMinderSensorEntity(
         key = self.entity_key.key
         if key in (
             SENSOR_TEMP,
-            SENSOR_TEMP_RT1,
-            SENSOR_TEMP_RT2,
+            SENSOR_TEMP_RT,
             SENSOR_HUM,
             SENSOR_BATT,
             SENSOR_WEIGHT_L,

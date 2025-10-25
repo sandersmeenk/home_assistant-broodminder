@@ -41,8 +41,7 @@ from .const import (
     SENSOR_SWARM_STATE,
     SENSOR_SWARM_TIME,
     SENSOR_TEMP,
-    SENSOR_TEMP_RT1,
-    SENSOR_TEMP_RT2,
+    SENSOR_TEMP_RT,
     SENSOR_WEIGHT_L,
     SENSOR_WEIGHT_L2,
     SENSOR_WEIGHT_R,
@@ -67,8 +66,7 @@ class ManufacturerData:
 
     # Extra parsed fields from PRIMARY (optional)
     elapsed_s: int | None = None
-    temperature_rt1_c: float | None = None
-    temperature_rt2_c: float | None = None
+    temperature_rt_c: float | None = None
     weight_l_kg: float | None = None
     weight_r_kg: float | None = None
     weight_l2_kg: float | None = None
@@ -84,7 +82,7 @@ def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
         return None
 
     if model in SPECIAL_TEMP_MODELS_F:
-        # raw is 16-bit → °F via SHT-like formula, convert to °C
+        # raw is 16-bit → °C via SHT-like formula in docs (converted via °F path)
         t_f = ((raw / (2**16)) * 165 - 40) * 9 / 5 + 32
         return (t_f - 32) * 5 / 9
 
@@ -180,14 +178,12 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     if len(payload) > IDX_ELAPSED_H:
         elapsed_s = payload[IDX_ELAPSED_L] | (payload[IDX_ELAPSED_H] << 8)
 
-    # Realtime temps (where present for models 47/49/56/57/58 per docs)
-    temperature_rt1_c = None
-    if len(payload) > IDX_RT_TEMP1_L:
-        temperature_rt1_c = _parse_temperature_c(model, payload[IDX_RT_TEMP1_L], 0)
-
-    temperature_rt2_c = None
-    if len(payload) > IDX_RT_TEMP2_L:
-        temperature_rt2_c = _parse_temperature_c(model, payload[IDX_RT_TEMP2_L], 0)
+    # Realtime temperature
+    temperature_rt_c = None
+    if len(payload) > IDX_RT_TEMP1_L and len(payload) > IDX_RT_TEMP2_L:
+        temperature_rt_c = _parse_temperature_c(model,
+                                                payload[IDX_RT_TEMP1_L],
+                                                payload[IDX_RT_TEMP2_L])
 
     # Weights
     weight_l_kg = None
@@ -239,8 +235,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         device_name=device_name,
         device_id=device_id,
         elapsed_s=elapsed_s,
-        temperature_rt1_c=temperature_rt1_c,
-        temperature_rt2_c=temperature_rt2_c,
+        temperature_rt_c=temperature_rt_c,
         weight_l_kg=weight_l_kg,
         weight_r_kg=weight_r_kg,
         weight_l2_kg=weight_l2_kg,
@@ -257,10 +252,8 @@ def extract_entities(parsed: ManufacturerData) -> dict[str, Any]:
     data: dict[str, Any] = {}
     if parsed.temperature_c is not None:
         data[SENSOR_TEMP] = parsed.temperature_c
-    if parsed.temperature_rt1_c is not None:
-        data[SENSOR_TEMP_RT1] = parsed.temperature_rt1_c
-    if parsed.temperature_rt2_c is not None:
-        data[SENSOR_TEMP_RT2] = parsed.temperature_rt2_c
+    if parsed.temperature_rt_c is not None:
+        data[SENSOR_TEMP_RT] = parsed.temperature_rt_c
     if parsed.humidity_percent is not None:
         data[SENSOR_HUM] = parsed.humidity_percent
     if parsed.battery_percent is not None:

@@ -10,8 +10,8 @@ IDX_MODEL = 0
 IDX_VER_MINOR = 1
 IDX_VER_MAJOR = 2
 
-# Realtime temp #1 (only on some models; see docs)
-IDX_RT_TEMP1_L = 3  # byte 13 overall
+# Realtime temp LSB (doc byte 13 overall → index 3 here)
+IDX_RT_TEMP1_L = 3
 # Battery %
 IDX_BATTERY = 4  # byte 14 overall
 # Elapsed (little-endian)
@@ -20,8 +20,8 @@ IDX_ELAPSED_H = 6  # byte 16 overall
 # Primary temperature (centi°C + 5000 for most models; SHT-like for 41/42/43)
 IDX_TEMP_L = 7  # byte 17 overall
 IDX_TEMP_H = 8  # byte 18 overall
-# Realtime temp #2 (only on some models; see docs)
-IDX_RT_TEMP2_L = 9  # byte 19 overall
+# Realtime temp MSB (doc byte 19 overall → index 9 here)
+IDX_RT_TEMP2_L = 9
 # Weight channels (little-endian 16-bit with -32767 offset; model-dependent)
 IDX_WEIGHT_L_L = 10  # byte 20 overall
 IDX_WEIGHT_L_H = 11  # byte 21 overall
@@ -56,8 +56,7 @@ NO_HUMIDITY_MODELS = {41, 47, 49, 52}
 
 # Entity keys
 SENSOR_TEMP = "temperature"
-SENSOR_TEMP_RT1 = "temperature_realtime_1"
-SENSOR_TEMP_RT2 = "temperature_realtime_2"
+SENSOR_TEMP_RT = "temperature_realtime"
 SENSOR_HUM = "humidity"
 SENSOR_BATT = "battery"
 
