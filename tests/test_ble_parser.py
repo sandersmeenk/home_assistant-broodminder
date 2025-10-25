@@ -2,6 +2,7 @@
 
 # ruff: noqa: PLR2004
 
+import datetime
 import math
 
 from custom_components.broodminder.ble_parser import extract_entities, parse_manufacturer_data
@@ -154,7 +155,7 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert parsed.weight_r_kg is None
     assert parsed.weight_realtime_total_kg is None
     assert parsed.swarm_state_numeric == 0xCF
-    assert parsed.swarm_time_iso8601 == "1970-07-14T04:20:15.000Z"
+    assert parsed.swarm_time_utc == datetime.datetime(1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC)
 
     # Verify entity export
     entities = extract_entities(parsed)
@@ -168,7 +169,7 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert SENSOR_WEIGHT_REALTIME not in entities
 
     assert entities[SENSOR_SWARM_STATE] == 0xCF
-    assert entities[SENSOR_SWARM_TIME] == "1970-07-14T04:20:15.000Z"
+    assert entities[SENSOR_SWARM_TIME] == datetime.datetime(1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC)
 
 
 def test_parse_primary_extended_fields_model_w() -> None:
@@ -238,7 +239,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert abs(parsed.weight_l_kg - 12.34) < 1e-6
     assert parsed.weight_r_kg is not None
     assert abs(parsed.weight_r_kg - 5.00) < 1e-6
-    assert parsed.swarm_time_iso8601 is None
+    assert parsed.swarm_time_utc is None
     assert parsed.weight_realtime_total_kg is not None
     assert abs(parsed.weight_realtime_total_kg - 20.00) < 1e-6
     assert parsed.swarm_state_numeric is None

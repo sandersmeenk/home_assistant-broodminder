@@ -75,7 +75,7 @@ class ManufacturerData:
     weight_r2_kg: float | None = None
     weight_realtime_total_kg: float | None = None
     swarm_state_numeric: int | None = None
-    swarm_time_iso8601: str | None = None
+    swarm_time_utc: datetime | None = None
 
 
 def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
@@ -127,35 +127,24 @@ def _parse_weight_kg(model: int, lo: int, hi: int) -> float | None:
     return weight
 
 
-def _parse_swarm_time(model: int, t1: int, t2: int, t3: int, t4: int) -> str | None:
-    swarm_time_iso8601 = None
 
+def _parse_swarm_time(model: int, t1: int, t2: int, t3: int, t4: int) -> datetime | None:
+    """Convert four bytes to a UTC datetime for T/TH models (per docs)."""
     if model in MODEL_T or model in MODEL_TH:
-        # Expose as swarm minder time
         swarm_time_unix = t1 | (t2 << 8) | (t3 << 16) | (t4 << 24)
-        swarm_time_iso8601 = _convert_unixtime_to_iso8601(swarm_time_unix)
+        try:
+            return datetime.fromtimestamp(swarm_time_unix, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
 
-    return swarm_time_iso8601
+    return None
 
 
 def _parse_swarm_state(model: int, ss: int) -> int | None:
-    swarm_state_numeric = None
-
     if model in MODEL_T or model in MODEL_TH:
-        swarm_state_numeric = ss
+        return ss
 
-    return swarm_state_numeric
-
-
-def _convert_unixtime_to_iso8601(unix_time: int) -> str | None:
-    """Convert a Unix time (epoch) in seconds to an ISO-8601 string in UTC."""
-
-    print(f"[convert] unix_time raw: {unix_time!r} (type={type(unix_time).__name__})")
-
-    dt = datetime.fromtimestamp(unix_time, tz=UTC)
-
-    # Use 'Z' suffix for UTC
-    return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return None
 
 
 def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> ManufacturerData | None:
@@ -163,7 +152,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
 
     payload = mfg_data.get(MANUFACTURER_ID)
     # We need up to index 20 (inclusive) if present → len >= 21
-    if not payload or len(payload) < 5:  # keep very permissive; we'll guard per-field reads
+    if not payload or len(payload) < 5:  # keep permissive; we'll guard per-field reads
         return None
 
     model = payload[IDX_MODEL]
@@ -210,11 +199,11 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     # Extra channels or SM time
     weight_l2_kg = None
     weight_r2_kg = None
-    swarm_time = None
+    swarm_time_dt = None
 
     if len(payload) > IDX_WR2_SM3:
         # Expose as swarm time for models where these are swarm time
-        swarm_time = _parse_swarm_time(
+        swarm_time_dt = _parse_swarm_time(
             model,
             payload[IDX_WL2_SM0],
             payload[IDX_WL2_SM1],
@@ -258,7 +247,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         weight_r2_kg=weight_r2_kg,
         weight_realtime_total_kg=weight_realtime_total_kg,
         swarm_state_numeric=swarm_state,
-        swarm_time_iso8601=swarm_time,
+        swarm_time_utc=swarm_time_dt,
     )
 
 
@@ -290,6 +279,6 @@ def extract_entities(parsed: ManufacturerData) -> dict[str, Any]:
         data[SENSOR_WEIGHT_REALTIME] = parsed.weight_realtime_total_kg
     if parsed.swarm_state_numeric is not None:
         data[SENSOR_SWARM_STATE] = parsed.swarm_state_numeric
-    if parsed.swarm_time_iso8601 is not None:
-        data[SENSOR_SWARM_TIME] = parsed.swarm_time_iso8601
+    if parsed.swarm_time_utc is not None:
+        data[SENSOR_SWARM_TIME] = parsed.swarm_time_utc
     return data
