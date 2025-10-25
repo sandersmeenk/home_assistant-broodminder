@@ -91,24 +91,21 @@ def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
 
 
 def _parse_battery(raw: int) -> int | None:
-    battery = raw
+    # Clamp to HA's 0..100 expectation; some frames can exceed 100.
+    if raw < 0:
+        return None
 
-    if not (SENSOR_PERCENTAGE_MINIMUM <= battery <= SENSOR_PERCENTAGE_MAXIMUM):
-        battery = None
-
-    return battery
+    return min(SENSOR_PERCENTAGE_MAXIMUM, max(SENSOR_PERCENTAGE_MINIMUM, raw))
 
 
 def _parse_humidity(model: int, raw: int) -> int | None:
-    humidity = None
+    if model in NO_HUMIDITY_MODELS:
+        return None
 
-    if model not in NO_HUMIDITY_MODELS:
-        humidity = raw
+    if not (SENSOR_PERCENTAGE_MINIMUM <= raw <= SENSOR_PERCENTAGE_MAXIMUM):
+        return None
 
-        if not (SENSOR_PERCENTAGE_MINIMUM <= humidity <= SENSOR_PERCENTAGE_MAXIMUM):
-            humidity = None
-
-    return humidity
+    return raw
 
 
 def _parse_weight_kg(model: int, lo: int, hi: int) -> float | None:
@@ -123,7 +120,6 @@ def _parse_weight_kg(model: int, lo: int, hi: int) -> float | None:
             weight = (raw - 32767) / 100.0
 
     return weight
-
 
 
 def _parse_swarm_time(model: int, t1: int, t2: int, t3: int, t4: int) -> datetime | None:
@@ -181,9 +177,9 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     # Realtime temperature
     temperature_rt_c = None
     if len(payload) > IDX_RT_TEMP1_L and len(payload) > IDX_RT_TEMP2_L:
-        temperature_rt_c = _parse_temperature_c(model,
-                                                payload[IDX_RT_TEMP1_L],
-                                                payload[IDX_RT_TEMP2_L])
+        temperature_rt_c = _parse_temperature_c(
+            model, payload[IDX_RT_TEMP1_L], payload[IDX_RT_TEMP2_L]
+        )
 
     # Weights
     weight_l_kg = None

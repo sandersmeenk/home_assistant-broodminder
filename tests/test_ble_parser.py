@@ -26,11 +26,59 @@ from custom_components.broodminder.const import (
 )
 
 
-def test_parse_model_temp_no_humidity() -> None:
+
+def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:  # noqa: N802
+    """Verifies an advertisement with invalid manufacturer id."""
+
+    parsed = parse_manufacturer_data("AA", {MANUFACTURER_ID: b"\x00\x01"})
+    assert parsed is None
+
+
+def test_GIVEN_model_t_WHEN_parse_with_battery_above_hundred_THEN_reports_hundred_percent() -> (
+    None
+):
+    """Verifies an advertisement with battery above hundred."""
+
+    payload = bytearray(15)
+    payload[0] = 41  # model
+    payload[1] = 0  # v.minor
+    payload[2] = 0  # v.major
+    payload[4] = 250  # battery %
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.model == 41
+    assert parsed.battery_percent == 100
+
+    entities = extract_entities(parsed)
+    assert SENSOR_BATT in entities
+
+
+def test_GIVEN_model_t_WHEN_parse_with_battery_between_zero_and_hundred_THEN_reports_temperature() -> (
+    None
+):
+    """Verifies an advertisement with battery above hundred."""
+
+    payload = bytearray(15)
+    payload[0] = 41  # model
+    payload[1] = 0  # v.minor
+    payload[2] = 0  # v.major
+    payload[4] = 1  # battery %
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.model == 41
+    assert parsed.battery_percent == 1
+
+    entities = extract_entities(parsed)
+    assert SENSOR_BATT in entities
+
+
+def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity() -> None:  # noqa: N802
     """Verifies a temperature advertisement without humidity."""
 
-    # Model 41 uses the special 16-bit scale; humidity not present for this model
-    # payload indices: 0:model, 1:ver minor, 2:ver major, 4:battery, 7-8:temp, 14:humidity
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
     payload = bytearray(15)
     payload[0] = 41  # model
@@ -45,19 +93,41 @@ def test_parse_model_temp_no_humidity() -> None:
     parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
     assert parsed is not None
     assert parsed.model == 41
-    assert parsed.battery_percent == 88
     assert parsed.humidity_percent is None  # filtered out by model rules
+
+    entities = extract_entities(parsed)
+    assert SENSOR_HUM not in entities
+
+
+def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperature() -> None:  # noqa: N802
+    """Verifies a temperature advertisement without humidity."""
+
+    raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
+    payload = bytearray(15)
+    payload[0] = 41  # model
+    payload[1] = 3  # v.minor
+    payload[2] = 1  # v.major
+    payload[4] = 88  # battery %
+    payload[7] = raw_temp & 0xFF
+    payload[8] = (raw_temp >> 8) & 0xFF
+    payload[14] = 99  # would be ignored for this model
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.model == 41
+
     # approx 42.5 C
     assert parsed.temperature_c is not None
     assert math.isclose(parsed.temperature_c, 42.5, rel_tol=1e-3, abs_tol=1e-3)
 
     entities = extract_entities(parsed)
     assert SENSOR_TEMP in entities
-    assert SENSOR_BATT in entities
-    assert SENSOR_HUM not in entities
 
 
-def test_parse_default_temp_and_humidity() -> None:
+def test_GIVEN_model_th_WHEN_parse_with_temperature_and_humidity_THEN_reports_temperature_and_humidity() -> (
+    None
+):
     """Verifies an advertisement with temperature and humidity."""
 
     # Model 42 uses default centi-C with +5000 offset
@@ -75,17 +145,9 @@ def test_parse_default_temp_and_humidity() -> None:
     parsed = parse_manufacturer_data("11:22:33:44:55:66", adv)
     assert parsed is not None
     assert parsed.model == 56
-    assert parsed.battery_percent == 100
     assert parsed.humidity_percent == 55
     assert parsed.temperature_c is not None
     assert abs(parsed.temperature_c - 1.23) < 1e-6
-
-
-def test_invalid_payload_returns_none() -> None:
-    """Verifies an advertisement with invalid manufacturer id."""
-
-    parsed = parse_manufacturer_data("AA", {MANUFACTURER_ID: b"\x00\x01"})
-    assert parsed is None
 
 
 def test_parse_primary_extended_fields_model_th() -> None:
@@ -155,7 +217,9 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert parsed.weight_r_kg is None
     assert parsed.weight_realtime_total_kg is None
     assert parsed.swarm_state_numeric == 0xCF
-    assert parsed.swarm_time_utc == datetime.datetime(1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC)
+    assert parsed.swarm_time_utc == datetime.datetime(
+        1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC
+    )
 
     # Verify entity export
     entities = extract_entities(parsed)
@@ -169,7 +233,9 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert SENSOR_WEIGHT_REALTIME not in entities
 
     assert entities[SENSOR_SWARM_STATE] == 0xCF
-    assert entities[SENSOR_SWARM_TIME] == datetime.datetime(1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC)
+    assert entities[SENSOR_SWARM_TIME] == datetime.datetime(
+        1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC
+    )
 
 
 def test_parse_primary_extended_fields_model_w() -> None:
