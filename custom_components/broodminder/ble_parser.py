@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .const import (
+    ID_TO_MODEL,
     IDX_BATTERY,
     IDX_ELAPSED_H,
     IDX_ELAPSED_L,
@@ -141,6 +142,15 @@ def _parse_swarm_state(model: int, ss: int) -> int | None:
     return None
 
 
+def _get_device_id_from_mac_address(mac_address: str) -> str:
+    parts = mac_address.split(":")
+    return ":".join(parts[-3:])
+
+
+def _get_model_name_from_model_id(model_id: int) -> str:
+    return ID_TO_MODEL.get(model_id, "Unknown")
+
+
 def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> ManufacturerData | None:
     """Parses the manufacturer data of the advertisement."""
 
@@ -218,8 +228,9 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         )
 
     # Device label
-    device_name = f"{MANUFACTURER} {model}"
-    device_id = address
+    model_name = _get_model_name_from_model_id(model)
+    device_id = _get_device_id_from_mac_address(address)
+    device_name = f"{MANUFACTURER}-{model_name} {device_id}"
 
     return ManufacturerData(
         address=address,
@@ -229,7 +240,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         humidity_percent=humidity,
         battery_percent=battery,
         device_name=device_name,
-        device_id=device_id,
+        device_id=address,
         elapsed_s=elapsed_s,
         temperature_rt_c=temperature_rt_c,
         weight_l_kg=weight_l_kg,

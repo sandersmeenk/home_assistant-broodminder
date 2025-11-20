@@ -1,5 +1,7 @@
 """Constants for the BroodMinder integration."""
 
+from typing import Iterable
+
 DOMAIN = "broodminder"
 
 MANUFACTURER_ID = 0x028D  # IF, LLC (BroodMinder)
@@ -43,16 +45,30 @@ MODEL_T = {41, 47}
 MODEL_TH = {42, 56}
 MODEL_W = {43, 57}
 MODEL_W3_W4 = {49}
-MODEL_SUBHUB = 52
-MODEL_HUB = 54
-MODEL_DIY = 58
-MODEL_BEEDAR = 63
+MODEL_SUBHUB = {52}
+MODEL_HUB = {54}
+MODEL_DIY = {58}
+MODEL_BEEDAR = {63}
 
 # Models with SHT-like temperature formula:
 SPECIAL_TEMP_MODELS_F = {41, 42, 43}
 
 # Models without humidity in adv payload:
 NO_HUMIDITY_MODELS = {41, 47, 49, 52}
+
+# Model names
+MODELS: dict[str, set[int]] = {
+    "T": MODEL_T,
+    "TH": MODEL_TH,
+    "W": MODEL_W,
+    "W3_W4": MODEL_W3_W4,
+    "SubHub": MODEL_SUBHUB,
+    "Hub": MODEL_HUB,
+    "DIY": MODEL_DIY,
+    "BeeDar": MODEL_BEEDAR,
+}
+
+ID_TO_MODEL: dict[int, str] = {model_id: name for name, ids in MODELS.items() for model_id in ids}
 
 # Entity keys
 SENSOR_TEMP = "temperature"

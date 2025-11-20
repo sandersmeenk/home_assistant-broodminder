@@ -114,7 +114,9 @@ def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperatur
 
     adv = {MANUFACTURER_ID: bytes(payload)}
     parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+
     assert parsed is not None
+    assert parsed.device_name == "BroodMinder-T DD:EE:FF"
     assert parsed.model == 41
 
     # approx 42.5 C
@@ -143,7 +145,9 @@ def test_GIVEN_model_th_WHEN_parse_with_temperature_and_humidity_THEN_reports_te
 
     adv = {MANUFACTURER_ID: bytes(payload)}
     parsed = parse_manufacturer_data("11:22:33:44:55:66", adv)
+
     assert parsed is not None
+    assert parsed.device_name == "BroodMinder-TH 44:55:66"
     assert parsed.model == 56
     assert parsed.humidity_percent == 55
     assert parsed.temperature_c is not None
@@ -205,6 +209,7 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert parsed is not None
 
     # Core fields
+    assert parsed.device_name == "BroodMinder-TH 55:66:77"
     assert parsed.model == 56
     assert parsed.battery_percent == 100
     assert parsed.humidity_percent == 55
@@ -293,6 +298,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert parsed is not None
 
     # Core fields
+    assert parsed.device_name == "BroodMinder-W 55:66:77"
     assert parsed.model == 57
     assert parsed.battery_percent == 100
     assert parsed.humidity_percent == 55
