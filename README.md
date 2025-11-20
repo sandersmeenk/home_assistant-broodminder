@@ -56,6 +56,21 @@ The BroodMinder integration provides the following sensor entities:
 
 * **Swarm state**  
   This indicates the swarm detection state of the BroodMinder, for the SwarmMinder feature.  
+  From the [documentation](https://doc.mybroodminder.com/31_sensors_T_TH):
+  | Swarm State  | Description                                                    |
+  |--------------|----------------------------------------------------------------|
+  | 0            | Stopped                                                        |
+  | 1            | Stopped - initialization complete                              |
+  | 2            | Stopped - by stop request                                      |
+  | 20           | Started - checking for swarm event                             |
+  | 21           | Started - buffering temperature data                           |
+  | 22           | Started - temperature < hive base temperature (32.5C, 90.5F)   |
+  | 25           | Started - buffered hive temperature < hive base temperature    |
+  | 29           | Swarm event detected                                           |
+  | 40           | Swarm event detected - start logging                           |
+  | 41           | Swarm event detected - still logging swarm data                |
+  | 60           | Swarm event logging complete - start waiting - swarm detection |
+  | 61           | Swarm event logging complete - still waiting                   |
 
 * **Swarm time**  
   This indicates the swarm time detection of the BroodMinder, for the SwarmMinder feature.   
