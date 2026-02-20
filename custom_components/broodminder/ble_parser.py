@@ -95,13 +95,15 @@ def _parse_battery(raw: int) -> int | None:
     if raw < 0:
         return None
 
-    # In the newer firmware, roughly every other reading is chargeRemaining as a battery value.
-    # It is a percent of remaining battery life based on how long the device has been running
-    # instead of battery voltage.
+    # In the newer firmware, roughly every other reading is chargeRemaining:
+    #   a percent of remaining battery life based on runtime
+    #   instead of battery voltage based value.
 
     if raw > SENSOR_PERCENTAGE_MAXIMUM:
+        # chargeRemaining
         return ((raw - 100) * 4)
 
+    # voltage
     return raw
 
 
