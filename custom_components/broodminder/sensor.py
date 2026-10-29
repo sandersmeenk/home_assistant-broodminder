@@ -50,10 +50,10 @@ class BMDescriptions:
     """Entity descriptions for all BroodMinder sensors."""
 
     temperature: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_TEMP, icon="mdi:thermometer"
+        key=SENSOR_TEMP, icon="mdi:thermometer", suggested_display_precision=1
     )
     temperature_rt: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_TEMP_RT, icon="mdi:thermometer"
+        key=SENSOR_TEMP_RT, icon="mdi:thermometer", suggested_display_precision=1
     )
     humidity: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_HUM,
@@ -67,19 +67,34 @@ class BMDescriptions:
         key=SENSOR_SAMPLE_COUNT, icon="mdi:counter"
     )
     weight_l: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_L, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_L,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_r: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_R, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_R,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_l2: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_L2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_L2,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_r2: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_R2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_R2,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_rt: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_REALTIME, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_REALTIME,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     swarm_state: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_SWARM_STATE, icon="mdi:bee"

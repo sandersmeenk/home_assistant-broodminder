@@ -87,9 +87,8 @@ def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
         return None
 
     if model in SPECIAL_TEMP_MODELS_F:
-        # raw is 16-bit → °C via SHT-like formula in docs (converted via °F path)
-        t_f = ((raw / (2**16)) * 165 - 40) * 9 / 5 + 32
-        return (t_f - 32) * 5 / 9
+        # raw is 16-bit → °C via SHT-like formula in docs
+        return raw / (2**16) * 165 - 40
 
     # Others: centiC with +5000 offset
     return (raw - 5000) / 100.0
