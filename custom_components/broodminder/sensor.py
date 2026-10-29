@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -23,6 +23,7 @@ from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.typing import StateType
 
 from .ble_parser import ManufacturerData, extract_entities
 from .const import (
@@ -45,8 +46,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
 class BMDescriptions:
+    """Entity descriptions for all BroodMinder sensors."""
+
     temperature: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_TEMP, icon="mdi:thermometer"
     )
@@ -108,7 +110,7 @@ def sensor_update_to_bluetooth_data_update(
     entity_data: dict[PassiveBluetoothEntityKey, Any] = {}
     entity_names: dict[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: Any, description: SensorEntityDescription, name: str):
+    def add(key: str, value: Any, description: SensorEntityDescription, name: str) -> None:
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
@@ -201,13 +203,15 @@ class BroodMinderSensorEntity(
 
     # Provide the current value from the processor
     @property
-    def native_value(self):
+    def native_value(self) -> StateType | datetime:
+        """Return the latest value for this sensor."""
         # For timestamp sensors, ensure extract_entities() returns a datetime
         return self.processor.entity_data.get(self.entity_key)
 
     # Units
     @property
-    def native_unit_of_measurement(self):
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement for this sensor."""
         key = self.entity_key.key
         if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return UnitOfTemperature.CELSIUS
@@ -226,7 +230,8 @@ class BroodMinderSensorEntity(
 
     # Device classes
     @property
-    def device_class(self):
+    def device_class(self) -> SensorDeviceClass | None:
+        """Return the device class for this sensor."""
         key = self.entity_key.key
         if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return SensorDeviceClass.TEMPERATURE
@@ -249,7 +254,8 @@ class BroodMinderSensorEntity(
 
     # State class: only for numeric measurements (NOT for timestamp or string)
     @property
-    def state_class(self):
+    def state_class(self) -> SensorStateClass | None:
+        """Return the state class for this sensor."""
         key = self.entity_key.key
         if key in (
             SENSOR_TEMP,

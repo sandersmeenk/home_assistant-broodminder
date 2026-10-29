@@ -1,6 +1,5 @@
 """Constants for the BroodMinder integration."""
 
-
 DOMAIN = "broodminder"
 
 MANUFACTURER_ID = 0x028D  # IF, LLC (BroodMinder)
@@ -15,7 +14,9 @@ IDX_VER_MAJOR = 2
 IDX_RT_TEMP1_L = 3
 # Battery %
 IDX_BATTERY = 4  # byte 14 overall
-# Elapsed (little-endian)
+# Shortest payload we accept: model, version and battery must be present
+MIN_PAYLOAD_LEN = IDX_BATTERY + 1
+# Elapsed seconds, little-endian
 IDX_ELAPSED_L = 5  # byte 15 overall
 IDX_ELAPSED_H = 6  # byte 16 overall
 # Primary temperature (centi°C + 5000 for most models; SHT-like for 41/42/43)

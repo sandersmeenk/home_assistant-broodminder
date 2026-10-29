@@ -1,3 +1,5 @@
+"""Parser for BroodMinder BLE advertisement manufacturer data."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,6 +31,7 @@ from .const import (
     IDX_WR2_SM3,
     MANUFACTURER,
     MANUFACTURER_ID,
+    MIN_PAYLOAD_LEN,
     MODEL_T,
     MODEL_TH,
     MODEL_W,
@@ -157,7 +160,9 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
 
     payload = mfg_data.get(MANUFACTURER_ID)
     # We need up to index 20 (inclusive) if present → len >= 21
-    if not payload or len(payload) < 5:  # keep permissive; we'll guard per-field reads
+    if (
+        not payload or len(payload) < MIN_PAYLOAD_LEN
+    ):  # keep permissive; we'll guard per-field reads
         return None
 
     model = payload[IDX_MODEL]

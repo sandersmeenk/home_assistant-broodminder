@@ -28,7 +28,7 @@ from custom_components.broodminder.const import (
 )
 
 
-def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:  # noqa: N802
+def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:
     """Verifies an advertisement with invalid manufacturer id."""
 
     parsed = parse_manufacturer_data("AA", {MANUFACTURER_ID: b"\x00\x01"})
@@ -52,7 +52,7 @@ def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:  # noqa:
         (63, "BeeDar"),
     ],
 )
-def test_GIVEN_known_model_id_WHEN_parse_THEN_reports_model_name(  # noqa: N802
+def test_GIVEN_known_model_id_WHEN_parse_THEN_reports_model_name(
     model_id: int, model_name: str
 ) -> None:
     """Verifies the numeric model id is mapped to its model name."""
@@ -69,7 +69,7 @@ def test_GIVEN_known_model_id_WHEN_parse_THEN_reports_model_name(  # noqa: N802
     assert parsed.device_name == f"BroodMinder-{model_name} DD:EE:FF"
 
 
-def test_GIVEN_unknown_model_id_WHEN_parse_THEN_reports_unknown_model_name() -> None:  # noqa: N802
+def test_GIVEN_unknown_model_id_WHEN_parse_THEN_reports_unknown_model_name() -> None:
     """Verifies an unmapped model id falls back to "Unknown"."""
 
     payload = bytearray(15)
@@ -84,9 +84,7 @@ def test_GIVEN_unknown_model_id_WHEN_parse_THEN_reports_unknown_model_name() -> 
     assert parsed.device_name == "BroodMinder-Unknown DD:EE:FF"
 
 
-def test_GIVEN_model_t_WHEN_parse_with_battery_above_hundred_THEN_reports_hundred_percent() -> (
-    None
-):
+def test_GIVEN_model_t_WHEN_battery_above_100_THEN_reports_100() -> None:
     """Verifies an advertisement with battery above hundred."""
 
     payload = bytearray(15)
@@ -105,9 +103,7 @@ def test_GIVEN_model_t_WHEN_parse_with_battery_above_hundred_THEN_reports_hundre
     assert SENSOR_BATT in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_battery_between_zero_and_hundred_THEN_reports_temperature() -> (
-    None
-):
+def test_GIVEN_model_t_WHEN_battery_in_range_THEN_reports_battery() -> None:
     """Verifies an advertisement with battery above hundred."""
 
     payload = bytearray(15)
@@ -126,7 +122,7 @@ def test_GIVEN_model_t_WHEN_parse_with_battery_between_zero_and_hundred_THEN_rep
     assert SENSOR_BATT in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity() -> None:  # noqa: N802
+def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity() -> None:
     """Verifies a temperature advertisement without humidity."""
 
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
@@ -149,7 +145,7 @@ def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity()
     assert SENSOR_HUM not in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperature() -> None:  # noqa: N802
+def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperature() -> None:
     """Verifies a temperature advertisement without humidity."""
 
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
@@ -177,9 +173,7 @@ def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperatur
     assert SENSOR_TEMP in entities
 
 
-def test_GIVEN_model_th_WHEN_parse_with_temperature_and_humidity_THEN_reports_temperature_and_humidity() -> (
-    None
-):
+def test_GIVEN_model_th_WHEN_parse_THEN_reports_temp_and_humidity() -> None:
     """Verifies an advertisement with temperature and humidity."""
 
     # Model 42 uses default centi-C with +5000 offset
@@ -205,14 +199,16 @@ def test_GIVEN_model_th_WHEN_parse_with_temperature_and_humidity_THEN_reports_te
 
 
 def test_parse_primary_extended_fields_model_th() -> None:
-    """Validate parsing of the additional PRIMARY fields and their exposure via extract_entities for model TH:
+    """Validate the extra PRIMARY fields and their entities for model TH.
+
+    Covers:
     - Elapsed seconds (bytes 15-16 overall → indices 5-6)
     - Weight L / Weight R (bytes 20-23 overall → indices 10-13)
     - Humidity (byte 24 → index 14)
     - SM time (bytes 25-28 → indices 15-18)
     - Realtime total weight (bytes 29-30 → indices 19-20)
     - Swarm state (byte 29 → index 19, raw).
-    """  # noqa: D205
+    """
     payload = bytearray(21)  # we need up to index 20 inclusive
     # Header-ish
     payload[0] = 56  # model
@@ -294,14 +290,16 @@ def test_parse_primary_extended_fields_model_th() -> None:
 
 
 def test_parse_primary_extended_fields_model_w() -> None:
-    """Validate parsing of the additional PRIMARY fields and their exposure via extract_entities for model w:
+    """Validate the extra PRIMARY fields and their entities for model W.
+
+    Covers:
     - Elapsed seconds (bytes 15-16 overall → indices 5-6)
     - Weight L / Weight R (bytes 20-23 overall → indices 10-13)
     - Humidity (byte 24 → index 14)
     - SM time (bytes 25-28 → indices 15-18)
     - Realtime total weight (bytes 29-30 → indices 19-20)
     - Swarm state (byte 29 → index 19, raw).
-    """  # noqa: D205
+    """
     payload = bytearray(21)  # we need up to index 20 inclusive
     # Header-ish
     payload[0] = 57  # model
