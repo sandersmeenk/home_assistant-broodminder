@@ -5,6 +5,8 @@
 import datetime
 import math
 
+import pytest
+
 from custom_components.broodminder.ble_parser import extract_entities, parse_manufacturer_data
 from custom_components.broodminder.const import (
     MANUFACTURER_ID,
@@ -31,6 +33,55 @@ def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:  # noqa:
 
     parsed = parse_manufacturer_data("AA", {MANUFACTURER_ID: b"\x00\x01"})
     assert parsed is None
+
+
+@pytest.mark.parametrize(
+    ("model_id", "model_name"),
+    [
+        (41, "T"),
+        (47, "T"),
+        (42, "TH"),
+        (56, "TH"),
+        (43, "Scale W"),
+        (57, "Scale W"),
+        (49, "Scale W3/W4"),
+        (52, "SubHub"),
+        (54, "Hub 4G"),
+        (58, "DIY"),
+        (60, "Hub Wifi"),
+        (63, "BeeDar"),
+    ],
+)
+def test_GIVEN_known_model_id_WHEN_parse_THEN_reports_model_name(  # noqa: N802
+    model_id: int, model_name: str
+) -> None:
+    """Verifies the numeric model id is mapped to its model name."""
+
+    payload = bytearray(15)
+    payload[0] = model_id  # model
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+
+    assert parsed is not None
+    assert parsed.model == model_id
+    assert parsed.model_name == model_name
+    assert parsed.device_name == f"BroodMinder-{model_name} DD:EE:FF"
+
+
+def test_GIVEN_unknown_model_id_WHEN_parse_THEN_reports_unknown_model_name() -> None:  # noqa: N802
+    """Verifies an unmapped model id falls back to "Unknown"."""
+
+    payload = bytearray(15)
+    payload[0] = 99  # model, not in ID_TO_MODEL
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+
+    assert parsed is not None
+    assert parsed.model == 99
+    assert parsed.model_name == "Unknown"
+    assert parsed.device_name == "BroodMinder-Unknown DD:EE:FF"
 
 
 def test_GIVEN_model_t_WHEN_parse_with_battery_above_hundred_THEN_reports_hundred_percent() -> (
@@ -297,7 +348,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert parsed is not None
 
     # Core fields
-    assert parsed.device_name == "BroodMinder-W 55:66:77"
+    assert parsed.device_name == "BroodMinder-Scale W 55:66:77"
     assert parsed.model == 57
     assert parsed.battery_percent == 100
     assert parsed.humidity_percent == 55

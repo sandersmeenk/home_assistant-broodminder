@@ -1,5 +1,7 @@
 colorlog==6.9.0
 homeassistant==2025.9.4
+# aiodns 3.5.0 (pinned by homeassistant) is incompatible with pycares 5.x
+pycares<5
 pip>=25.0
 ruff==0.13.1
 

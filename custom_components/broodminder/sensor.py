@@ -100,7 +100,7 @@ def sensor_update_to_bluetooth_data_update(
         connections={("bluetooth", parsed.address)},
         manufacturer=MANUFACTURER,
         name=parsed.device_name,
-        model=str(parsed.model),
+        model=parsed.model_name,
         sw_version=parsed.firmware,
     )
 

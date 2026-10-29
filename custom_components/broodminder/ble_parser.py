@@ -58,6 +58,7 @@ class ManufacturerData:
 
     address: str
     model: int
+    model_name: str
     firmware: str | None
     temperature_c: float | None
     humidity_percent: int | None
@@ -235,6 +236,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     return ManufacturerData(
         address=address,
         model=model,
+        model_name=model_name,
         firmware=fw,
         temperature_c=temp_c,
         humidity_percent=humidity,
