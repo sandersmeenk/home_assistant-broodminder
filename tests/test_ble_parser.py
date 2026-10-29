@@ -26,7 +26,6 @@ from custom_components.broodminder.const import (
 )
 
 
-
 def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:  # noqa: N802
     """Verifies an advertisement with invalid manufacturer id."""
 

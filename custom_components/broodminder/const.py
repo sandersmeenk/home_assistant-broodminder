@@ -1,6 +1,5 @@
 """Constants for the BroodMinder integration."""
 
-from typing import Iterable
 
 DOMAIN = "broodminder"
 
@@ -46,8 +45,9 @@ MODEL_TH = {42, 56}
 MODEL_W = {43, 57}
 MODEL_W3_W4 = {49}
 MODEL_SUBHUB = {52}
-MODEL_HUB = {54}
+MODEL_HUB_4G = {54}
 MODEL_DIY = {58}
+MODEL_HUB_WIFI = {60}
 MODEL_BEEDAR = {63}
 
 # Models with SHT-like temperature formula:
@@ -60,11 +60,12 @@ NO_HUMIDITY_MODELS = {41, 47, 49, 52}
 MODELS: dict[str, set[int]] = {
     "T": MODEL_T,
     "TH": MODEL_TH,
-    "W": MODEL_W,
-    "W3_W4": MODEL_W3_W4,
+    "Scale W": MODEL_W,
+    "Scale W3/W4": MODEL_W3_W4,
     "SubHub": MODEL_SUBHUB,
-    "Hub": MODEL_HUB,
+    "Hub 4G": MODEL_HUB_4G,
     "DIY": MODEL_DIY,
+    "Hub Wifi": MODEL_HUB_WIFI,
     "BeeDar": MODEL_BEEDAR,
 }
 
