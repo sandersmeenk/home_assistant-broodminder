@@ -86,6 +86,8 @@ SENSOR_WEIGHT_R2 = "weight_right_2"
 SENSOR_WEIGHT_REALTIME = "weight_realtime_total"
 SENSOR_SWARM_STATE = "swarm_state"
 SENSOR_SWARM_TIME = "swarm_time"  # may be time since boot if not synced
+# Older swarm times are time since boot: the clock was never set by a Bees app sync
+SWARM_TIME_MIN_VALID_UNIX = 1420070400  # 2015-01-01T00:00:00Z
 
 SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100

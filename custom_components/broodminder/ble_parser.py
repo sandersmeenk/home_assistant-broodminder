@@ -52,6 +52,7 @@ from .const import (
     SENSOR_WEIGHT_R2,
     SENSOR_WEIGHT_REALTIME,
     SPECIAL_TEMP_MODELS_F,
+    SWARM_TIME_MIN_VALID_UNIX,
 )
 
 
@@ -78,7 +79,8 @@ class ManufacturerData:
     weight_r2_kg: float | None = None
     weight_realtime_total_kg: float | None = None
     swarm_state_numeric: int | None = None
-    swarm_time_utc: datetime | None = None
+    swarm_time_utc: datetime | None = None  # None if the device clock wasn't synced
+    swarm_time_supported: bool = False
 
 
 def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
@@ -130,6 +132,8 @@ def _parse_swarm_time(model: int, t1: int, t2: int, t3: int, t4: int) -> datetim
     """Convert four bytes to a UTC datetime for T/TH models (per docs)."""
     if model in MODEL_T or model in MODEL_TH:
         swarm_time_unix = t1 | (t2 << 8) | (t3 << 16) | (t4 << 24)
+        if swarm_time_unix < SWARM_TIME_MIN_VALID_UNIX:
+            return None
         try:
             return datetime.fromtimestamp(swarm_time_unix, tz=UTC)
         except (OverflowError, OSError, ValueError):
@@ -207,8 +211,10 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     weight_l2_kg = None
     weight_r2_kg = None
     swarm_time_dt = None
+    swarm_time_supported = False
 
     if len(payload) > IDX_WR2_SM3:
+        swarm_time_supported = model in MODEL_T or model in MODEL_TH
         # Expose as swarm time for models where these are swarm time
         swarm_time_dt = _parse_swarm_time(
             model,
@@ -256,6 +262,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         weight_realtime_total_kg=weight_realtime_total_kg,
         swarm_state_numeric=swarm_state,
         swarm_time_utc=swarm_time_dt,
+        swarm_time_supported=swarm_time_supported,
     )
 
 
@@ -285,6 +292,7 @@ def extract_entities(parsed: ManufacturerData) -> dict[str, Any]:
         data[SENSOR_WEIGHT_REALTIME] = parsed.weight_realtime_total_kg
     if parsed.swarm_state_numeric is not None:
         data[SENSOR_SWARM_STATE] = parsed.swarm_state_numeric
-    if parsed.swarm_time_utc is not None:
+    if parsed.swarm_time_supported:
+        # Keep None so the entity shows unknown instead of a stale or missing value
         data[SENSOR_SWARM_TIME] = parsed.swarm_time_utc
     return data

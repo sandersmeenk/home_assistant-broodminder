@@ -62,10 +62,9 @@ def _scale_payload() -> bytes:
     return bytes(payload)
 
 
-def _t_payload() -> bytes:
+def _t_payload(swarm_time_unix: int = int(SWARM_TIME.timestamp())) -> bytes:
     payload = _payload(model=47, battery=70, temp_c=12.34)
-    swarm_time = int(SWARM_TIME.timestamp())
-    payload[15:19] = swarm_time.to_bytes(4, "little")
+    payload[15:19] = swarm_time_unix.to_bytes(4, "little")
     payload[19] = 2  # swarm state
     return bytes(payload)
 
@@ -238,3 +237,39 @@ async def test_GIVEN_loaded_entry_WHEN_unloaded_THEN_sensors_unavailable(
     assert entry.state is ConfigEntryState.NOT_LOADED
     assert entry.entry_id not in hass.data[DOMAIN]
     assert hass.states.get("sensor.broodminder_th_00_00_01_temperature").state == "unavailable"
+
+
+async def _setup_t_sensor(hass: HomeAssistant, payload: bytes) -> None:
+    """Discover the T sensor, then advertise again so its entities are created."""
+    _inject(hass, T_ADDRESS, payload)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    _inject(hass, T_ADDRESS, payload)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def test_GIVEN_t_sensor_with_unsynced_clock_WHEN_advertising_THEN_swarm_time_unknown(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies a swarm time counted from boot shows as unknown rather than a 1970 date."""
+
+    await _setup_t_sensor(hass, _t_payload(swarm_time_unix=3600))  # one hour after boot
+
+    state = hass.states.get("sensor.broodminder_t_00_00_03_swarm_time")
+    assert state is not None
+    assert state.state == "unknown"
+
+
+async def test_GIVEN_valid_swarm_time_WHEN_uptime_value_arrives_THEN_swarm_time_unknown(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies a synced swarm time is replaced, not kept, when the clock is reset."""
+
+    await _setup_t_sensor(hass, _t_payload())
+    swarm_time = "sensor.broodminder_t_00_00_03_swarm_time"
+    assert hass.states.get(swarm_time).state == SWARM_TIME.isoformat()
+
+    # Battery change: the clock restarts from boot until the next Bees app sync
+    _inject(hass, T_ADDRESS, _t_payload(swarm_time_unix=3600))
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert hass.states.get(swarm_time).state == "unknown"

@@ -74,6 +74,7 @@ The BroodMinder integration provides the following sensor entities:
 
 * **Swarm time**  
   This indicates the swarm time detection of the BroodMinder, for the SwarmMinder feature.   
+  It shows *Unknown* until the sensor's clock has been set by a sync with the BroodMinder Bees app, for example after a battery change.   
 
 * **Weight left, weight right**  
   This indicates the measured weight of the hive. 

@@ -268,9 +268,8 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert parsed.weight_r_kg is None
     assert parsed.weight_realtime_total_kg is None
     assert parsed.swarm_state_numeric == 0xCF
-    assert parsed.swarm_time_utc == datetime.datetime(
-        1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC
-    )
+    assert parsed.swarm_time_supported is True
+    assert parsed.swarm_time_utc is None  # 1970-07-14: time since boot, clock not synced
 
     # Verify entity export
     entities = extract_entities(parsed)
@@ -284,9 +283,8 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert SENSOR_WEIGHT_REALTIME not in entities
 
     assert entities[SENSOR_SWARM_STATE] == 0xCF
-    assert entities[SENSOR_SWARM_TIME] == datetime.datetime(
-        1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC
-    )
+    assert SENSOR_SWARM_TIME in entities
+    assert entities[SENSOR_SWARM_TIME] is None
 
 
 def test_parse_primary_extended_fields_model_w() -> None:
@@ -360,6 +358,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert parsed.weight_r_kg is not None
     assert abs(parsed.weight_r_kg - 5.00) < 1e-6
     assert parsed.swarm_time_utc is None
+    assert parsed.swarm_time_supported is False
     assert parsed.weight_realtime_total_kg is not None
     assert abs(parsed.weight_realtime_total_kg - 20.00) < 1e-6
     assert parsed.swarm_state_numeric is None
@@ -375,3 +374,36 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert math.isclose(entities[SENSOR_WEIGHT_REALTIME], 20.00, abs_tol=1e-6)
     assert SENSOR_SWARM_STATE not in entities
     assert SENSOR_SWARM_TIME not in entities
+
+
+def _t_payload_with_swarm_time(swarm_time_unix: int) -> bytes:
+    payload = bytearray(21)  # we need up to index 20 inclusive
+    payload[0] = 47  # model T
+    payload[4] = 100  # battery %
+    payload[15:19] = swarm_time_unix.to_bytes(4, "little")  # SM time, LSB first
+    payload[19] = 29  # swarm state: swarm event detected
+    return bytes(payload)
+
+
+@pytest.mark.parametrize(
+    ("swarm_time_unix", "expected"),
+    [
+        (1420070400, datetime.datetime(2015, 1, 1, tzinfo=datetime.UTC)),  # cutoff
+        (1420070399, None),  # one second before the cutoff
+        (0, None),  # no event recorded since boot
+    ],
+)
+def test_GIVEN_swarm_time_around_2015_WHEN_parse_THEN_only_synced_time_is_reported(
+    swarm_time_unix: int, expected: datetime.datetime | None
+) -> None:
+    """Verifies swarm times before 2015 are reported as None, but the entity key is kept."""
+
+    adv = {MANUFACTURER_ID: _t_payload_with_swarm_time(swarm_time_unix)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.swarm_time_supported is True
+    assert parsed.swarm_time_utc == expected
+
+    entities = extract_entities(parsed)
+    assert SENSOR_SWARM_TIME in entities
+    assert entities[SENSOR_SWARM_TIME] == expected
