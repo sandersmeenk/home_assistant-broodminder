@@ -1,20 +1,26 @@
 {
   "domain": "broodminder",
   "name": "BroodMinder",
-  "documentation": "https://github.com/sandersmeenk/home_assistant-broodminder",
-  "issue_tracker": "https://github.com/sandersmeenk/home_assistant-broodminder/issues",
-  "codeowners": ["@sandersmeenk"],
-  "iot_class": "local_push",
-  "integration_type": "device",
-  "requirements": [],
-  "after_dependencies": ["bluetooth"],
-  "dependencies": ["bluetooth_adapters"],
+  "after_dependencies": [
+    "bluetooth"
+  ],
   "bluetooth": [
     {
       "manufacturer_id": 653,
       "connectable": false
     }
   ],
+  "codeowners": [
+    "@sandersmeenk"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
+  "documentation": "https://github.com/sandersmeenk/home_assistant-broodminder",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/sandersmeenk/home_assistant-broodminder/issues",
+  "requirements": [],
   "version": "0.4.0"
 }

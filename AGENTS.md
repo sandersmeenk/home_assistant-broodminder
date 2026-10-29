@@ -72,6 +72,16 @@ scripts/lint ci    # report only, no changes
 
 Before finishing a change, run `scripts/lint` and `scripts/test`, and make sure both are clean.
 
+## CI
+
+GitHub Actions run on pushes to `main` and `develop` and on pull requests:
+
+- `.github/workflows/ci.yml` — `scripts/lint ci` and pytest.
+- `.github/workflows/validate.yml` — hassfest and HACS validation (also weekly). Hassfest
+  requires `manifest.json` keys as `domain`, `name`, then alphabetical.
+
+Neither validator can run in the devcontainer, so check their results on GitHub.
+
 ## Home Assistant hosts: hands off
 
 **Never access a real Home Assistant host for testing unless the user explicitly instructs you
