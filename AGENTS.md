@@ -82,6 +82,22 @@ GitHub Actions run on pushes to `main` and `develop` and on pull requests:
 
 Neither validator can run in the devcontainer, so check their results on GitHub.
 
+## Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/): one section
+per released version (matching the git tags) with its date, newest first, and a top section
+for the next version marked `Unreleased`, numbered after `version` in `manifest.json`.
+
+- Update it with every finished change that affects users, in the same commit.
+- Write for beekeepers using Home Assistant, not programmers: describe what they see or can
+  do, not the code (e.g. "Temperatures are shown with one decimal", not
+  "set `suggested_display_precision`").
+- Group entries under `Added`, `Changed`, `Fixed`, `Removed`, `Documentation` or `Internal`.
+- Tests, CI, linting, refactoring and developer tooling don't get their own entries: keep them
+  as one line under `Internal` saying they're internal fixes and cleanups.
+- On a release, replace `Unreleased` with the date, update the compare links at the bottom
+  (the unreleased one points at `develop`) and start a new `Unreleased` section.
+
 ## Home Assistant hosts: hands off
 
 **Never access a real Home Assistant host for testing unless the user explicitly instructs you
