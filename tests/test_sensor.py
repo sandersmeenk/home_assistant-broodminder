@@ -1,6 +1,8 @@
 """Tests for broodminder/sensor.py."""
 # ruff: noqa: PLR2004
 
+import pytest
+
 from custom_components.broodminder.ble_parser import parse_manufacturer_data
 from custom_components.broodminder.const import (
     MANUFACTURER,
@@ -12,8 +14,13 @@ from custom_components.broodminder.const import (
     SENSOR_WEIGHT_R,
     SENSOR_WEIGHT_R2,
     SENSOR_WEIGHT_REALTIME,
+    SWARM_STATE_DESCRIPTION_UNKNOWN,
+    SWARM_STATE_DESCRIPTIONS,
 )
-from custom_components.broodminder.sensor import sensor_update_to_bluetooth_data_update
+from custom_components.broodminder.sensor import (
+    sensor_update_to_bluetooth_data_update,
+    swarm_state_description,
+)
 
 
 def test_GIVEN_model_th_WHEN_build_update_THEN_device_model_is_model_name() -> None:
@@ -80,3 +87,29 @@ def test_GIVEN_model_w_WHEN_build_update_THEN_temperature_and_weight_have_displa
     assert precisions[SENSOR_WEIGHT_L2] == 2
     assert precisions[SENSOR_WEIGHT_R2] == 2
     assert precisions[SENSOR_WEIGHT_REALTIME] == 2
+
+
+@pytest.mark.parametrize(
+    ("swarm_state", "expected"),
+    [
+        (0, "Stopped"),
+        (29, "Swarm event detected"),
+        (61, "Swarm event logging complete - still waiting"),
+        (0xCF, "Unknown"),  # not a documented SwarmMinder state
+    ],
+)
+def test_GIVEN_swarm_state_code_WHEN_describe_THEN_readable_description(
+    swarm_state: int, expected: str
+) -> None:
+    """Verifies swarm state codes map to their documented description, or Unknown."""
+
+    assert swarm_state_description(swarm_state) == expected
+
+
+def test_GIVEN_all_documented_swarm_states_WHEN_describe_THEN_each_has_own_description() -> None:
+    """Verifies every documented code has a distinct description that isn't the fallback."""
+
+    descriptions = [swarm_state_description(code) for code in SWARM_STATE_DESCRIPTIONS]
+
+    assert SWARM_STATE_DESCRIPTION_UNKNOWN not in descriptions
+    assert len(set(descriptions)) == len(SWARM_STATE_DESCRIPTIONS)

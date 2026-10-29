@@ -62,10 +62,10 @@ def _scale_payload() -> bytes:
     return bytes(payload)
 
 
-def _t_payload(swarm_time_unix: int = int(SWARM_TIME.timestamp())) -> bytes:
+def _t_payload(swarm_time_unix: int = int(SWARM_TIME.timestamp()), swarm_state: int = 2) -> bytes:
     payload = _payload(model=47, battery=70, temp_c=12.34)
     payload[15:19] = swarm_time_unix.to_bytes(4, "little")
-    payload[19] = 2  # swarm state
+    payload[19] = swarm_state  # swarm state
     return bytes(payload)
 
 
@@ -170,6 +170,11 @@ async def test_GIVEN_three_broodminders_WHEN_discovered_THEN_entries_devices_and
     assert float(hass.states.get(f"{t}_temperature").state) == 12.34
     assert hass.states.get(f"{t}_humidity") is None
     assert hass.states.get(f"{t}_swarm_state").state == "2"
+    assert (
+        hass.states.get(f"{t}_swarm_state").attributes["description"]
+        == "Stopped - by stop request"
+    )
+    assert "description" not in hass.states.get(f"{t}_temperature").attributes
     assert hass.states.get(f"{t}_swarm_time").state == SWARM_TIME.isoformat()
 
     # Sensors of one device don't leak into another
@@ -273,3 +278,16 @@ async def test_GIVEN_valid_swarm_time_WHEN_uptime_value_arrives_THEN_swarm_time_
     await hass.async_block_till_done(wait_background_tasks=True)
 
     assert hass.states.get(swarm_time).state == "unknown"
+
+
+async def test_GIVEN_swarm_state_WHEN_advertising_THEN_state_is_code_with_description(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies the swarm state stays numeric and gets a readable description attribute."""
+
+    await _setup_t_sensor(hass, _t_payload(swarm_state=29))  # swarm event detected
+
+    state = hass.states.get("sensor.broodminder_t_00_00_03_swarm_state")
+    assert state is not None
+    assert state.state == "29"
+    assert state.attributes["description"] == "Swarm event detected"

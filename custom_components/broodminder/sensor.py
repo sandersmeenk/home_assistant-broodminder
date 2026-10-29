@@ -27,6 +27,7 @@ from homeassistant.helpers.typing import StateType
 
 from .ble_parser import ManufacturerData, extract_entities
 from .const import (
+    ATTR_DESCRIPTION,
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATT,
@@ -41,6 +42,8 @@ from .const import (
     SENSOR_WEIGHT_R,
     SENSOR_WEIGHT_R2,
     SENSOR_WEIGHT_REALTIME,
+    SWARM_STATE_DESCRIPTION_UNKNOWN,
+    SWARM_STATE_DESCRIPTIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,6 +108,11 @@ class BMDescriptions:
 
 
 DESCRIPTIONS = BMDescriptions()
+
+
+def swarm_state_description(swarm_state: int) -> str:
+    """Return the human readable description of a SwarmMinder state code."""
+    return SWARM_STATE_DESCRIPTIONS.get(swarm_state, SWARM_STATE_DESCRIPTION_UNKNOWN)
 
 
 def sensor_update_to_bluetooth_data_update(
@@ -222,6 +230,17 @@ class BroodMinderSensorEntity(
         """Return the latest value for this sensor."""
         # For timestamp sensors, ensure extract_entities() returns a datetime
         return self.processor.entity_data.get(self.entity_key)
+
+    # Attributes
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return a human readable description of the swarm state."""
+        if self.entity_key.key != SENSOR_SWARM_STATE:
+            return None
+        swarm_state = self.processor.entity_data.get(self.entity_key)
+        if swarm_state is None:
+            return None
+        return {ATTR_DESCRIPTION: swarm_state_description(swarm_state)}
 
     # Units
     @property

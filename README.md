@@ -56,6 +56,8 @@ The BroodMinder integration provides the following sensor entities:
 
 * **Swarm state**  
   This indicates the swarm detection state of the BroodMinder, for the SwarmMinder feature.  
+  The state is the numeric code below; the `description` attribute holds its description
+  (*Unknown* for an undocumented code).  
   From the [documentation](https://doc.mybroodminder.com/31_sensors_T_TH):
   | Swarm State  | Description                                                    |
   |--------------|----------------------------------------------------------------|

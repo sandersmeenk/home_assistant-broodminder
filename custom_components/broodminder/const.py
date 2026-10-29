@@ -89,6 +89,25 @@ SENSOR_SWARM_TIME = "swarm_time"  # may be time since boot if not synced
 # Older swarm times are time since boot: the clock was never set by a Bees app sync
 SWARM_TIME_MIN_VALID_UNIX = 1420070400  # 2015-01-01T00:00:00Z
 
+# Swarm state attribute: human readable SwarmMinder state
+ATTR_DESCRIPTION = "description"
+# From https://doc.mybroodminder.com/31_sensors_T_TH, "SwarmMinder Details"
+SWARM_STATE_DESCRIPTIONS: dict[int, str] = {
+    0: "Stopped",
+    1: "Stopped - initialization complete",
+    2: "Stopped - by stop request",
+    20: "Started - checking for swarm event",
+    21: "Started - buffering temperature data",
+    22: "Started - temperature < hive base temperature (32.5C, 90.5F)",
+    25: "Started - buffered hive temperature < hive base temperature",
+    29: "Swarm event detected",
+    40: "Swarm event detected - start logging",
+    41: "Swarm event detected - still logging swarm data",
+    60: "Swarm event logging complete - start waiting - swarm detection",
+    61: "Swarm event logging complete - still waiting",
+}
+SWARM_STATE_DESCRIPTION_UNKNOWN = "Unknown"
+
 SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100
 
