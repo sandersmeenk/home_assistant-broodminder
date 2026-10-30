@@ -97,11 +97,19 @@ def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
 
 
 def _parse_battery(raw: int) -> int | None:
-    # Clamp to HA's 0..100 expectation; some frames can exceed 100.
     if raw < 0:
         return None
 
-    return min(SENSOR_PERCENTAGE_MAXIMUM, max(SENSOR_PERCENTAGE_MINIMUM, raw))
+    # In the newer firmware, roughly every other reading is chargeRemaining:
+    #   a percent of remaining battery life based on runtime
+    #   instead of battery voltage based value.
+
+    if raw > SENSOR_PERCENTAGE_MAXIMUM:
+        # chargeRemaining
+        return ((raw - 100) * 4)
+
+    # voltage
+    return raw
 
 
 def _parse_humidity(model: int, raw: int) -> int | None:
