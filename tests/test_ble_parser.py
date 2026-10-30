@@ -5,6 +5,8 @@
 import datetime
 import math
 
+import pytest
+
 from custom_components.broodminder.ble_parser import extract_entities, parse_manufacturer_data
 from custom_components.broodminder.const import (
     MANUFACTURER_ID,
@@ -26,17 +28,63 @@ from custom_components.broodminder.const import (
 )
 
 
-
-def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:  # noqa: N802
+def test_GIVEN_invalid_payload__WHEN_parse_THEN_returns_none() -> None:
     """Verifies an advertisement with invalid manufacturer id."""
 
     parsed = parse_manufacturer_data("AA", {MANUFACTURER_ID: b"\x00\x01"})
     assert parsed is None
 
 
-def test_GIVEN_model_t_WHEN_parse_with_battery_above_hundred_THEN_reports_hundred_percent() -> (
-    None
-):
+@pytest.mark.parametrize(
+    ("model_id", "model_name"),
+    [
+        (41, "T"),
+        (47, "T"),
+        (42, "TH"),
+        (56, "TH"),
+        (43, "Scale W"),
+        (57, "Scale W"),
+        (49, "Scale W3/W4"),
+        (52, "SubHub"),
+        (54, "Hub 4G"),
+        (58, "DIY"),
+        (60, "Hub Wifi"),
+        (63, "BeeDar"),
+    ],
+)
+def test_GIVEN_known_model_id_WHEN_parse_THEN_reports_model_name(
+    model_id: int, model_name: str
+) -> None:
+    """Verifies the numeric model id is mapped to its model name."""
+
+    payload = bytearray(15)
+    payload[0] = model_id  # model
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+
+    assert parsed is not None
+    assert parsed.model == model_id
+    assert parsed.model_name == model_name
+    assert parsed.device_name == f"BroodMinder-{model_name} DD:EE:FF"
+
+
+def test_GIVEN_unknown_model_id_WHEN_parse_THEN_reports_unknown_model_name() -> None:
+    """Verifies an unmapped model id falls back to "Unknown"."""
+
+    payload = bytearray(15)
+    payload[0] = 99  # model, not in ID_TO_MODEL
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+
+    assert parsed is not None
+    assert parsed.model == 99
+    assert parsed.model_name == "Unknown"
+    assert parsed.device_name == "BroodMinder-Unknown DD:EE:FF"
+
+
+def test_GIVEN_model_t_WHEN_battery_above_100_THEN_reports_100() -> None:
     """Verifies an advertisement with battery above hundred."""
 
     payload = bytearray(15)
@@ -55,9 +103,7 @@ def test_GIVEN_model_t_WHEN_parse_with_battery_above_hundred_THEN_reports_hundre
     assert SENSOR_BATT in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_battery_between_zero_and_hundred_THEN_reports_temperature() -> (
-    None
-):
+def test_GIVEN_model_t_WHEN_battery_in_range_THEN_reports_battery() -> None:
     """Verifies an advertisement with battery above hundred."""
 
     payload = bytearray(15)
@@ -76,7 +122,7 @@ def test_GIVEN_model_t_WHEN_parse_with_battery_between_zero_and_hundred_THEN_rep
     assert SENSOR_BATT in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity() -> None:  # noqa: N802
+def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity() -> None:
     """Verifies a temperature advertisement without humidity."""
 
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
@@ -99,7 +145,7 @@ def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity()
     assert SENSOR_HUM not in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperature() -> None:  # noqa: N802
+def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperature() -> None:
     """Verifies a temperature advertisement without humidity."""
 
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
@@ -127,9 +173,7 @@ def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperatur
     assert SENSOR_TEMP in entities
 
 
-def test_GIVEN_model_th_WHEN_parse_with_temperature_and_humidity_THEN_reports_temperature_and_humidity() -> (
-    None
-):
+def test_GIVEN_model_th_WHEN_parse_THEN_reports_temp_and_humidity() -> None:
     """Verifies an advertisement with temperature and humidity."""
 
     # Model 42 uses default centi-C with +5000 offset
@@ -155,14 +199,16 @@ def test_GIVEN_model_th_WHEN_parse_with_temperature_and_humidity_THEN_reports_te
 
 
 def test_parse_primary_extended_fields_model_th() -> None:
-    """Validate parsing of the additional PRIMARY fields and their exposure via extract_entities for model TH:
+    """Validate the extra PRIMARY fields and their entities for model TH.
+
+    Covers:
     - Elapsed seconds (bytes 15-16 overall → indices 5-6)
     - Weight L / Weight R (bytes 20-23 overall → indices 10-13)
     - Humidity (byte 24 → index 14)
     - SM time (bytes 25-28 → indices 15-18)
     - Realtime total weight (bytes 29-30 → indices 19-20)
     - Swarm state (byte 29 → index 19, raw).
-    """  # noqa: D205
+    """
     payload = bytearray(21)  # we need up to index 20 inclusive
     # Header-ish
     payload[0] = 56  # model
@@ -222,9 +268,8 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert parsed.weight_r_kg is None
     assert parsed.weight_realtime_total_kg is None
     assert parsed.swarm_state_numeric == 0xCF
-    assert parsed.swarm_time_utc == datetime.datetime(
-        1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC
-    )
+    assert parsed.swarm_time_supported is True
+    assert parsed.swarm_time_utc is None  # 1970-07-14: time since boot, clock not synced
 
     # Verify entity export
     entities = extract_entities(parsed)
@@ -238,20 +283,21 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert SENSOR_WEIGHT_REALTIME not in entities
 
     assert entities[SENSOR_SWARM_STATE] == 0xCF
-    assert entities[SENSOR_SWARM_TIME] == datetime.datetime(
-        1970, 7, 14, 4, 20, 15, 0, tzinfo=datetime.UTC
-    )
+    assert SENSOR_SWARM_TIME in entities
+    assert entities[SENSOR_SWARM_TIME] is None
 
 
 def test_parse_primary_extended_fields_model_w() -> None:
-    """Validate parsing of the additional PRIMARY fields and their exposure via extract_entities for model w:
+    """Validate the extra PRIMARY fields and their entities for model W.
+
+    Covers:
     - Elapsed seconds (bytes 15-16 overall → indices 5-6)
     - Weight L / Weight R (bytes 20-23 overall → indices 10-13)
     - Humidity (byte 24 → index 14)
     - SM time (bytes 25-28 → indices 15-18)
     - Realtime total weight (bytes 29-30 → indices 19-20)
     - Swarm state (byte 29 → index 19, raw).
-    """  # noqa: D205
+    """
     payload = bytearray(21)  # we need up to index 20 inclusive
     # Header-ish
     payload[0] = 57  # model
@@ -298,7 +344,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert parsed is not None
 
     # Core fields
-    assert parsed.device_name == "BroodMinder-W 55:66:77"
+    assert parsed.device_name == "BroodMinder-Scale W 55:66:77"
     assert parsed.model == 57
     assert parsed.battery_percent == 100
     assert parsed.humidity_percent == 55
@@ -312,6 +358,7 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert parsed.weight_r_kg is not None
     assert abs(parsed.weight_r_kg - 5.00) < 1e-6
     assert parsed.swarm_time_utc is None
+    assert parsed.swarm_time_supported is False
     assert parsed.weight_realtime_total_kg is not None
     assert abs(parsed.weight_realtime_total_kg - 20.00) < 1e-6
     assert parsed.swarm_state_numeric is None
@@ -327,3 +374,36 @@ def test_parse_primary_extended_fields_model_w() -> None:
     assert math.isclose(entities[SENSOR_WEIGHT_REALTIME], 20.00, abs_tol=1e-6)
     assert SENSOR_SWARM_STATE not in entities
     assert SENSOR_SWARM_TIME not in entities
+
+
+def _t_payload_with_swarm_time(swarm_time_unix: int) -> bytes:
+    payload = bytearray(21)  # we need up to index 20 inclusive
+    payload[0] = 47  # model T
+    payload[4] = 100  # battery %
+    payload[15:19] = swarm_time_unix.to_bytes(4, "little")  # SM time, LSB first
+    payload[19] = 29  # swarm state: swarm event detected
+    return bytes(payload)
+
+
+@pytest.mark.parametrize(
+    ("swarm_time_unix", "expected"),
+    [
+        (1420070400, datetime.datetime(2015, 1, 1, tzinfo=datetime.UTC)),  # cutoff
+        (1420070399, None),  # one second before the cutoff
+        (0, None),  # no event recorded since boot
+    ],
+)
+def test_GIVEN_swarm_time_around_2015_WHEN_parse_THEN_only_synced_time_is_reported(
+    swarm_time_unix: int, expected: datetime.datetime | None
+) -> None:
+    """Verifies swarm times before 2015 are reported as None, but the entity key is kept."""
+
+    adv = {MANUFACTURER_ID: _t_payload_with_swarm_time(swarm_time_unix)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.swarm_time_supported is True
+    assert parsed.swarm_time_utc == expected
+
+    entities = extract_entities(parsed)
+    assert SENSOR_SWARM_TIME in entities
+    assert entities[SENSOR_SWARM_TIME] == expected

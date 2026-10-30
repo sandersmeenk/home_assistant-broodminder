@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+# Deploy the working tree to a Home Assistant host for testing, and revert to the HACS version.
+#
+#   scripts/deploy push     back up the HACS copy (first push only), deploy, restart
+#   scripts/deploy revert   restore the HACS copy, restart
+#   scripts/deploy status   show which version is live and whether a HACS backup exists
+#   scripts/deploy backup   create a full Home Assistant backup on the host
+#
+# Needs key-based SSH access to the Terminal & SSH add-on, with the `ha` CLI available.
+# Override the target with HA_HOST and HA_SSH_USER.
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+HA_HOST="${HA_HOST:-homeassistant.local}"
+HA_SSH_USER="${HA_SSH_USER:-root}"
+
+DOMAIN="broodminder"
+REMOTE_DIR="/config/custom_components/${DOMAIN}"
+# Outside custom_components, or HA would see two integrations with the same domain
+REMOTE_BACKUP_DIR="/config/.${DOMAIN}_hacs_backup"
+
+remote() {
+    ssh -o BatchMode=yes "${HA_SSH_USER}@${HA_HOST}" "$@"
+}
+
+remote_version() {
+    remote "sed -n 's/.*\"version\": *\"\([^\"]*\)\".*/\1/p' '$1/manifest.json' 2>/dev/null" || true
+}
+
+check_and_restart() {
+    echo "Checking Home Assistant configuration..."
+    remote "ha core check"
+    echo "Restarting Home Assistant..."
+    remote "ha core restart"
+    echo "Restart requested. Watch the logs with: ssh ${HA_SSH_USER}@${HA_HOST} ha core logs -f"
+}
+
+dev_version() {
+    local version sha
+    version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "custom_components/${DOMAIN}/manifest.json")
+    sha=$(git rev-parse --short HEAD)
+    if [ -n "$(git status --porcelain -- "custom_components/${DOMAIN}")" ]; then
+        sha="${sha}.dirty"
+    fi
+    echo "${version}-dev+${sha}"
+}
+
+cmd_push() {
+    if remote "test -d '${REMOTE_BACKUP_DIR}'"; then
+        echo "HACS backup already present, keeping it ($(remote_version "${REMOTE_BACKUP_DIR}"))"
+    elif remote "test -d '${REMOTE_DIR}'"; then
+        echo "Backing up installed version ($(remote_version "${REMOTE_DIR}")) to ${REMOTE_BACKUP_DIR}"
+        remote "cp -a '${REMOTE_DIR}' '${REMOTE_BACKUP_DIR}'"
+    else
+        echo "No installed version found on ${HA_HOST}, nothing to back up"
+    fi
+
+    # Stage a copy so the dev version marker never touches the repository
+    local version
+    staging=$(mktemp -d)
+    trap 'rm -rf "${staging}"' EXIT
+    cp -r "custom_components/${DOMAIN}/." "${staging}/"
+    find "${staging}" -name __pycache__ -type d -prune -exec rm -rf {} +
+    version=$(dev_version)
+    sed -i "s/\"version\": *\"[^\"]*\"/\"version\": \"${version}\"/" "${staging}/manifest.json"
+
+    echo "Deploying ${version} to ${HA_HOST}:${REMOTE_DIR}"
+    tar -C "${staging}" -cf - . | remote "rm -rf '${REMOTE_DIR}' && mkdir -p '${REMOTE_DIR}' && tar -C '${REMOTE_DIR}' -xf -"
+
+    check_and_restart
+}
+
+cmd_revert() {
+    if ! remote "test -d '${REMOTE_BACKUP_DIR}'"; then
+        echo "No HACS backup found on ${HA_HOST}." >&2
+        echo "Restore through HACS instead: HACS → BroodMinder → ⋮ → Redownload, then restart." >&2
+        exit 1
+    fi
+
+    echo "Restoring HACS version ($(remote_version "${REMOTE_BACKUP_DIR}"))"
+    remote "rm -rf '${REMOTE_DIR}' && mv '${REMOTE_BACKUP_DIR}' '${REMOTE_DIR}'"
+
+    check_and_restart
+}
+
+cmd_status() {
+    local live backup
+    live=$(remote_version "${REMOTE_DIR}")
+    backup=$(remote_version "${REMOTE_BACKUP_DIR}")
+    echo "Host:         ${HA_HOST}"
+    echo "Live version: ${live:-not installed}"
+    echo "HACS backup:  ${backup:-none}"
+}
+
+cmd_backup() {
+    local name
+    name="pre-${DOMAIN}-dev-$(date +%Y%m%d-%H%M%S)"
+    echo "Creating full Home Assistant backup '${name}' on ${HA_HOST} (this can take a few minutes)..."
+    remote "ha backups new --name '${name}'"
+}
+
+case "$1" in
+    push) cmd_push ;;
+    revert) cmd_revert ;;
+    status) cmd_status ;;
+    backup) cmd_backup ;;
+    *)
+        echo "Usage: $0 {push|revert|status|backup}" >&2
+        exit 1
+        ;;
+esac

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -23,9 +23,11 @@ from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.typing import StateType
 
 from .ble_parser import ManufacturerData, extract_entities
 from .const import (
+    ATTR_DESCRIPTION,
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATT,
@@ -40,18 +42,21 @@ from .const import (
     SENSOR_WEIGHT_R,
     SENSOR_WEIGHT_R2,
     SENSOR_WEIGHT_REALTIME,
+    SWARM_STATE_DESCRIPTION_UNKNOWN,
+    SWARM_STATE_DESCRIPTIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
 class BMDescriptions:
+    """Entity descriptions for all BroodMinder sensors."""
+
     temperature: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_TEMP, icon="mdi:thermometer"
+        key=SENSOR_TEMP, icon="mdi:thermometer", suggested_display_precision=1
     )
     temperature_rt: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_TEMP_RT, icon="mdi:thermometer"
+        key=SENSOR_TEMP_RT, icon="mdi:thermometer", suggested_display_precision=1
     )
     humidity: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_HUM,
@@ -65,19 +70,34 @@ class BMDescriptions:
         key=SENSOR_SAMPLE_COUNT, icon="mdi:counter"
     )
     weight_l: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_L, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_L,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_r: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_R, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_R,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_l2: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_L2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_L2,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_r2: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_R2, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_R2,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     weight_rt: SensorEntityDescription = SensorEntityDescription(
-        key=SENSOR_WEIGHT_REALTIME, icon="mdi:scale", device_class=SensorDeviceClass.WEIGHT
+        key=SENSOR_WEIGHT_REALTIME,
+        icon="mdi:scale",
+        device_class=SensorDeviceClass.WEIGHT,
+        suggested_display_precision=2,
     )
     swarm_state: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_SWARM_STATE, icon="mdi:bee"
@@ -90,6 +110,11 @@ class BMDescriptions:
 DESCRIPTIONS = BMDescriptions()
 
 
+def swarm_state_description(swarm_state: int) -> str:
+    """Return the human readable description of a SwarmMinder state code."""
+    return SWARM_STATE_DESCRIPTIONS.get(swarm_state, SWARM_STATE_DESCRIPTION_UNKNOWN)
+
+
 def sensor_update_to_bluetooth_data_update(
     parsed: ManufacturerData,
 ) -> PassiveBluetoothDataUpdate[Any]:
@@ -100,7 +125,7 @@ def sensor_update_to_bluetooth_data_update(
         connections={("bluetooth", parsed.address)},
         manufacturer=MANUFACTURER,
         name=parsed.device_name,
-        model=str(parsed.model),
+        model=parsed.model_name,
         sw_version=parsed.firmware,
     )
 
@@ -108,7 +133,7 @@ def sensor_update_to_bluetooth_data_update(
     entity_data: dict[PassiveBluetoothEntityKey, Any] = {}
     entity_names: dict[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: Any, description: SensorEntityDescription, name: str):
+    def add(key: str, value: Any, description: SensorEntityDescription, name: str) -> None:
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
@@ -201,13 +226,26 @@ class BroodMinderSensorEntity(
 
     # Provide the current value from the processor
     @property
-    def native_value(self):
+    def native_value(self) -> StateType | datetime:
+        """Return the latest value for this sensor."""
         # For timestamp sensors, ensure extract_entities() returns a datetime
         return self.processor.entity_data.get(self.entity_key)
 
+    # Attributes
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return a human readable description of the swarm state."""
+        if self.entity_key.key != SENSOR_SWARM_STATE:
+            return None
+        swarm_state = self.processor.entity_data.get(self.entity_key)
+        if swarm_state is None:
+            return None
+        return {ATTR_DESCRIPTION: swarm_state_description(swarm_state)}
+
     # Units
     @property
-    def native_unit_of_measurement(self):
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement for this sensor."""
         key = self.entity_key.key
         if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return UnitOfTemperature.CELSIUS
@@ -226,7 +264,8 @@ class BroodMinderSensorEntity(
 
     # Device classes
     @property
-    def device_class(self):
+    def device_class(self) -> SensorDeviceClass | None:
+        """Return the device class for this sensor."""
         key = self.entity_key.key
         if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return SensorDeviceClass.TEMPERATURE
@@ -249,7 +288,8 @@ class BroodMinderSensorEntity(
 
     # State class: only for numeric measurements (NOT for timestamp or string)
     @property
-    def state_class(self):
+    def state_class(self) -> SensorStateClass | None:
+        """Return the state class for this sensor."""
         key = self.entity_key.key
         if key in (
             SENSOR_TEMP,
