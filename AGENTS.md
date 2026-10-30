@@ -77,6 +77,7 @@ Before finishing a change, run `scripts/lint` and `scripts/test`, and make sure 
 GitHub Actions run on pushes to `main` and `develop` and on pull requests:
 
 - `.github/workflows/ci.yml` — `scripts/lint ci` and pytest.
+- `.github/workflows/release.yml` — GitHub release on version tags (see Changelog).
 - `.github/workflows/validate.yml` — hassfest and HACS validation (also weekly). Hassfest
   requires `manifest.json` keys as `domain`, `name`, then alphabetical.
 
@@ -97,6 +98,14 @@ for the next version marked `Unreleased`, numbered after `version` in `manifest.
   as one line under `Internal` saying they're internal fixes and cleanups.
 - On a release, replace `Unreleased` with the date, update the compare links at the bottom
   (the unreleased one points at `develop`) and start a new `Unreleased` section.
+
+HACS shows the GitHub release notes, not `CHANGELOG.md`, in Home Assistant's update dialog.
+`.github/workflows/release.yml` publishes them: pushing a version tag (e.g. `0.4.0`) creates a
+GitHub release whose notes are that version's changelog section, extracted by
+`scripts/release_notes.py <version>`. It fails if the section is missing, empty or still
+`Unreleased`, so date the section before tagging. To (re)publish the notes of an existing tag,
+run the workflow manually with that tag; it then uses the changelog of the branch it runs
+from. Only the highest version is marked as the latest release.
 
 ## Home Assistant hosts: hands off
 
