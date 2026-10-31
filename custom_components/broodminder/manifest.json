@@ -22,5 +22,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/sandersmeenk/home_assistant-broodminder/issues",
   "requirements": [],
-  "version": "0.4.0"
+  "version": "0.5.0"
 }

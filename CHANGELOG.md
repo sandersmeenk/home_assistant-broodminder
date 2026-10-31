@@ -5,6 +5,8 @@ All notable changes to the BroodMinder integration for Home Assistant are listed
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - Unreleased
+
 ## [0.4.0] - 2026-10-31
 
 ### Added
@@ -100,6 +102,7 @@ First release.
 - Sensors for battery, temperature, realtime temperature, humidity, weight (per scale side
   and total), sample count, swarm state and swarm time, depending on the BroodMinder model.
 
+[0.5.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.4.0...develop
 [0.4.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/sandersmeenk/home_assistant-broodminder/releases/tag/0.2.0
