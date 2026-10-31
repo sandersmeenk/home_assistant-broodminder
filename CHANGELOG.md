@@ -14,32 +14,57 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   description on the sensor.
 - BroodMinder DIY scales now show their weight: Weight Left, Weight Right, Weight Left 2,
   Weight Right 2 and Weight Realtime.
-- The original BroodMinder-W scale (model 43) now shows the total hive weight as Weight
-  Realtime. This scale weighs one side of the hive, so the total is twice the left plus right
-  weight.
+- **Breaking:** The original BroodMinder-W scale (model 43) now shows the total hive weight as
+  Weight Realtime. This scale weighs one side of the hive, so the total is twice the left plus
+  right weight. The sensor keeps its entity ID, but its value now means something else:
+  automations, scripts and alerts that use Weight Realtime on this scale need new thresholds,
+  and its history and statistics mix the old, meaningless values with the new totals.
 
 ### Changed
 
 - Temperatures are shown with one decimal and weights with two, instead of a long string of
   digits.
-- A device's model is shown by name (for example "TH") instead of a code number.
+- **Breaking:** A device's model is shown by name (for example "TH") instead of a code number,
+  and some BroodMinders get a new device name to match:
+  - BroodMinder-W and W+ (models 43 and 57): `BroodMinder-W` becomes `BroodMinder-Scale W`
+  - BroodMinder-W3 and W4 (model 49): `BroodMinder-W3_W4` becomes `BroodMinder-Scale W3/W4`
+  - 4G Hub (model 54): `BroodMinder-Hub` becomes `BroodMinder-Hub 4G`
+  - Wifi Hub (model 60): `BroodMinder-Unknown` becomes `BroodMinder-Hub Wifi`
+
+  Home Assistant updates the device and sensor names, unless you renamed the device yourself.
+  Sensors you already have keep their entity ID (for example
+  `sensor.broodminder_w_dd_ee_ff_weight_left`), so automations, scripts and dashboards that
+  use them keep working. Check these after updating:
+  - Sensors that appear for the first time, and all sensors of a device you delete and add
+    again, get an entity ID with the new name (for example
+    `sensor.broodminder_scale_w_dd_ee_ff_weight_left`). Update automations, scripts and
+    dashboards that use the old entity ID, or rename the entity ID back on the sensor's
+    settings page.
+  - Automations, scripts and templates that look for a device by its name, or check its model
+    number (for example `device_attr(..., 'model') == '43'`), need the new name.
 
 ### Fixed
 
-- If a BroodMinder's clock was never set through the BroodMinder Bees app, the swarm time
-  sensor now shows "Unknown" instead of a date around 1970 ("56 years ago").
+- **Breaking:** If a BroodMinder's clock was never set through the BroodMinder Bees app, the
+  swarm time sensor now shows "Unknown" instead of a date around 1970 ("56 years ago").
+  Automations, scripts and templates that use the swarm time get "unknown" instead of a date,
+  so check that they handle it.
 - Setup messages, such as "Device is already configured", now show properly in Home
   Assistant.
 - The original BroodMinder-W scale (model 43) no longer shows a realtime temperature of
   −40 °C, or impossible weights such as −327 kg for Weight Left 2, Weight Right 2 and Weight
   Realtime.
 - Realtime temperature is only shown for BroodMinders that measure it. The original
-  BroodMinder-T and -TH (models 41 and 42), the SubHub, the hubs and the BeeDar no longer show
+  BroodMinder-T and -TH (models 41 and 42), the SubHub, the hubs, the BeeDar and models the
+  integration doesn't recognise yet (shown as "Unknown", such as the W5 scale) no longer show
   a meaningless value.
-- Scale weights of 0.00 kg and 0.06 kg, for example on an empty scale, are no longer ignored.
-- Sensors that are no longer created stay listed in Home Assistant as no longer provided: Realtime
-  Temp on the models above, and Weight Left 2 and Weight Right 2 on the BroodMinder-W
-  (model 43). You can delete them from the device page.
+- **Breaking:** Scale weights of 0.00 kg and 0.06 kg, for example on an empty scale, are no
+  longer ignored. Automations and alerts on a sudden weight drop can now be triggered by a
+  0.00 kg reading.
+- **Breaking:** Sensors that are no longer created stay listed in Home Assistant as no longer
+  provided: Realtime Temp on the models above, and Weight Left 2 and Weight Right 2 on the
+  BroodMinder-W (model 43). Automations, scripts and dashboards that use them stop working, so
+  remove them there. You can then delete the sensors from the device page.
 
 ### Documentation
 
