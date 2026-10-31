@@ -31,67 +31,8 @@ When the bee hives are outside of the Bluetooth range of the Home Assistant serv
 
 One solution to increase the Bluetooth range is to set up an Espressif's ESP32 board as Bluetooth proxy using ESPHome. This then relays the Bluetooth data over the Wi-Fi network to which the Home Assistant server is connected. This BroodMinder integration is out-of-the-box compatible with ESPHome's Bluetooth proxy; no changes or configuration is required for the BroodMinder integration. For more information, see [ESPHome documentation](https://esphome.io/components/bluetooth_proxy).
 
-## Home Assistant entities
 
-This section decribes the entities that the BroodMinder integration adds to Home Assistant.
-
-### Sensors
-
-The BroodMinder integration provides the following sensor entities:
-
-* **Battery**
-  This provides the state of charge of the battery in percentage from 0 to 100%.
-
-* **Humidity**
-  This provides the measured humidity of the BroodMinder in percentage from 0 to 100%.
-
-* **Realtime temperature**
-  This provides the measured realtime temperature of the BroodMinder in degrees Celcius.
-  Only models `47`, `49`, `56`, `57` and `58` send a realtime temperature.
-
-* **Temperature**
-  This provides the measured and filtered temperature of the BroodMinder in degrees Celcius.
-
-* **Sample count**
-  This provides the total number of samples that the BroodMinder has taken.
-
-* **Swarm state**
-  This indicates the swarm detection state of the BroodMinder, for the SwarmMinder feature.
-  The state is the numeric code below; the `description` attribute holds its description
-  (*Unknown* for an undocumented code).
-  From the [documentation](https://doc.mybroodminder.com/31_sensors_T_TH):
-  | Swarm State  | Description                                                    |
-  |--------------|----------------------------------------------------------------|
-  | 0            | Stopped                                                        |
-  | 1            | Stopped - initialization complete                              |
-  | 2            | Stopped - by stop request                                      |
-  | 20           | Started - checking for swarm event                             |
-  | 21           | Started - buffering temperature data                           |
-  | 22           | Started - temperature < hive base temperature (32.5C, 90.5F)   |
-  | 25           | Started - buffered hive temperature < hive base temperature    |
-  | 29           | Swarm event detected                                           |
-  | 40           | Swarm event detected - start logging                           |
-  | 41           | Swarm event detected - still logging swarm data                |
-  | 60           | Swarm event logging complete - start waiting - swarm detection |
-  | 61           | Swarm event logging complete - still waiting                   |
-
-* **Swarm time**
-  This indicates the swarm time detection of the BroodMinder, for the SwarmMinder feature.
-  It shows *Unknown* until the sensor's clock has been set by a sync with the BroodMinder Bees app, for example after a battery change.
-
-* **Weight left, weight right**
-  This indicates the measured weight of the hive, per side of the scale, in kilograms.
-
-* **Weight left 2, weight right 2**
-  The weight on the extra load cells of scales that have them (models `49`, `57` and `58`).
-
-* **Weight realtime**
-  The total weight of the hive in kilograms, as sent by the scale.
-  The original BroodMinder-W (model `43`) weighs one side of the hive and doesn't send a total,
-  so for this scale it is calculated as 2 × (weight left + weight right).
-
-
-## Supported devices
+## Supported BroodMinder devices
 
 This integration supports any BroodMinder model that broadcasts weight, temperature, humidity, and battery in the standard format according to the [BroodMinder documentation](https://doc.mybroodminder.com/87_physics_and_tech_stuff).
 Humidity is not present for models `41`, `47`, `49`, `52` (see [model information](https://doc.mybroodminder.com/30_sensors)), as per the format documentation.
@@ -104,14 +45,20 @@ In theory this means it should work with the following devices (model numbers in
 * BroodMinder-W3 and W4 hive scales (`49`)
 * BroodMinder DIY scales (`58`)
 
-The BroodMinder SubHub (`52`), Hub 4G (`54`), Hub WiFi (`60`) and BeeDar (`63`) are recognised
-and show up as devices, but only with basic sensors. Their advertisements aren't documented, so
-the values may not be meaningful, and the BeeDar's bee count isn't shown.
+Partially supported:
 
-The BroodMinder-W5 hive scale isn't supported yet. Its model number isn't known to the
-integration, so it shows up as an "Unknown" device without weight sensors.
+* BroodMinder SubHub (`52`)
+* Hub 4G (`54`)
+* Hub WiFi (`60`)
+* BeeDar (`63`)  
+These partially supported devices are recognised and show up as devices, but only with basic sensors. Their advertisements are still unknown, so the values may not be meaningful, and the BeeDar's bee count isn't shown.
 
-In practise, only these devices have been physically tested:
+Not supported (yet):
+
+* BroodMinder-W5 hive scale  
+Its model number is unknown, so it shows up as an "Unknown" device without weight sensors.
+
+Physically verified:
 
 * BroodMinder-TH internal hive monitor
 
@@ -120,7 +67,7 @@ devices were tested succesfully, or any issues you have found. The documentation
 
 If you are technical, you can ofcourse make your own improvements and create a pull request for integration.
 
-### Sensors per device
+## Entities per device
 
 Which sensors are created depends on the BroodMinder model. The number in brackets is the
 BroodMinder model number.
@@ -146,6 +93,63 @@ the hive and measures half its weight, so the integration calculates Weight Real
 
 The SubHub, hubs and BeeDar haven't been tested: their sensors use the standard
 advertisement format, which these devices may not follow.
+
+
+## Entity descriptions
+
+This section decribes the entities that the BroodMinder integration adds to Home Assistant.
+
+The BroodMinder integration provides the following sensor entities:
+
+* **Battery**  
+  This provides the state of charge of the battery in percentage from 0 to 100%.
+
+* **Humidity**  
+  This provides the measured humidity of the BroodMinder in percentage from 0 to 100%.
+
+* **Realtime temperature**  
+  This provides the measured realtime temperature of the BroodMinder in degrees Celcius.
+  
+* **Temperature**  
+  This provides the measured and filtered temperature of the BroodMinder in degrees Celcius.
+
+* **Sample count**  
+  This provides the total number of samples that the BroodMinder has taken.
+
+* **Swarm state**  
+  This indicates the swarm detection state of the BroodMinder, for the SwarmMinder feature.
+  The state is the numeric code below; the `description` attribute holds its description
+  (*Unknown* for an undocumented code).
+  From the [documentation](https://doc.mybroodminder.com/31_sensors_T_TH):
+  | Swarm State  | Description                                                    |
+  |--------------|----------------------------------------------------------------|
+  | 0            | Stopped                                                        |
+  | 1            | Stopped - initialization complete                              |
+  | 2            | Stopped - by stop request                                      |
+  | 20           | Started - checking for swarm event                             |
+  | 21           | Started - buffering temperature data                           |
+  | 22           | Started - temperature < hive base temperature (32.5C, 90.5F)   |
+  | 25           | Started - buffered hive temperature < hive base temperature    |
+  | 29           | Swarm event detected                                           |
+  | 40           | Swarm event detected - start logging                           |
+  | 41           | Swarm event detected - still logging swarm data                |
+  | 60           | Swarm event logging complete - start waiting - swarm detection |
+  | 61           | Swarm event logging complete - still waiting                   |
+
+* **Swarm time**  
+  This indicates the swarm time detection of the BroodMinder, for the SwarmMinder feature.
+  It shows *Unknown* until the sensor's clock has been set by a sync with the BroodMinder Bees app, for example after a battery change.
+
+* **Weight left, weight right**  
+  This indicates the measured weight of the hive, per side of the scale, in kilograms.
+
+* **Weight left 2, weight right 2**  
+  The weight on the extra load cells of scales that have them (models `49`, `57` and `58`).
+
+* **Weight realtime**  
+  The total weight of the hive in kilograms, as sent by the scale.
+  The original BroodMinder-W (model `43`) weighs one side of the hive and doesn't send a total,
+  so for this scale it is calculated as 2 × (weight left + weight right).
 
 
 ## Installation and setup
