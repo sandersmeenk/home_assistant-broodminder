@@ -13,17 +13,14 @@ from custom_components.broodminder.const import (
     SENSOR_BATT,
     SENSOR_HUM,
     SENSOR_SAMPLE_COUNT,
-    # Optional extras we don't strictly assert in values, but we verify presence/absence
-    # (left here in case you later want to assert on them)
-    # SENSOR_TEMP_RT1,
-    # SENSOR_TEMP_RT2,
-    # SENSOR_WEIGHT_L2,
-    # SENSOR_WEIGHT_R2,
     SENSOR_SWARM_STATE,
     SENSOR_SWARM_TIME,
     SENSOR_TEMP,
+    SENSOR_TEMP_RT,
     SENSOR_WEIGHT_L,
+    SENSOR_WEIGHT_L2,
     SENSOR_WEIGHT_R,
+    SENSOR_WEIGHT_R2,
     SENSOR_WEIGHT_REALTIME,
 )
 
@@ -145,7 +142,7 @@ def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity()
     assert SENSOR_HUM not in entities
 
 
-def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperature() -> None:
+def test_GIVEN_t_41_WHEN_parse_THEN_reports_temperature() -> None:
     """Verifies a temperature advertisement without humidity."""
 
     raw_temp = 0x8000  # 32768 -> ~42.5 C after conversion
@@ -173,10 +170,10 @@ def test_GIVEN_model_t_WHEN_parse_with_temperature_value_THEN_reports_temperatur
     assert SENSOR_TEMP in entities
 
 
-def test_GIVEN_model_th_WHEN_parse_THEN_reports_temp_and_humidity() -> None:
+def test_GIVEN_th_56_WHEN_parse_THEN_reports_temp_and_humidity() -> None:
     """Verifies an advertisement with temperature and humidity."""
 
-    # Model 42 uses default centi-C with +5000 offset
+    # Model 56 uses default centi-C with +5000 offset
     # raw = 0x1403 = 5123 -> (5123 - 5000)/100 = 1.23 C
     payload = bytearray(15)
     payload[0] = 56  # model
@@ -198,7 +195,7 @@ def test_GIVEN_model_th_WHEN_parse_THEN_reports_temp_and_humidity() -> None:
     assert abs(parsed.temperature_c - 1.23) < 1e-6
 
 
-def test_parse_primary_extended_fields_model_th() -> None:
+def test_GIVEN_th_56_WHEN_parse_THEN_reports_extended_fields() -> None:
     """Validate the extra PRIMARY fields and their entities for model TH.
 
     Covers:
@@ -287,7 +284,7 @@ def test_parse_primary_extended_fields_model_th() -> None:
     assert entities[SENSOR_SWARM_TIME] is None
 
 
-def test_parse_primary_extended_fields_model_w() -> None:
+def test_GIVEN_scale_w_57_WHEN_parse_THEN_reports_extended_fields() -> None:
     """Validate the extra PRIMARY fields and their entities for model W.
 
     Covers:
@@ -407,3 +404,211 @@ def test_GIVEN_swarm_time_around_2015_WHEN_parse_THEN_only_synced_time_is_report
     entities = extract_entities(parsed)
     assert SENSOR_SWARM_TIME in entities
     assert entities[SENSOR_SWARM_TIME] == expected
+
+
+def _scale_w_43_doc_payload() -> bytearray:
+    """Model 43 advertisement from the BroodMinder docs (87_physics_and_tech_stuff)."""
+    payload = bytearray(21)
+    payload[0] = 0x2B  # model 43
+    payload[1] = 0x15  # v.minor
+    payload[2] = 0x02  # v.major
+    payload[3] = 0x00  # realtime temperature LSB: not sent by model 43
+    payload[4] = 0x02  # battery %
+    payload[5] = 0x21  # elapsed LSB: 33
+    payload[6] = 0x00  # elapsed MSB
+    payload[7] = 0xD0  # temperature LSB: SHT raw 0x62D0 -> 23.69 °C
+    payload[8] = 0x62  # temperature MSB
+    payload[9] = 0x00  # realtime temperature MSB: not sent by model 43
+    payload[10] = 0xFF  # weight left LSB: 0x7FFF -> 0.00 kg
+    payload[11] = 0x7F  # weight left MSB
+    payload[12] = 0x05  # weight right LSB: 0x8005 -> 0.06 kg
+    payload[13] = 0x80  # weight right MSB
+    payload[14] = 0x37  # humidity: 55%
+    payload[15] = 0x07  # device id 43:30:07, LSB first: not a weight
+    payload[16] = 0x30  # device id
+    payload[17] = 0x43  # device id
+    payload[18] = 0x00  # unused
+    payload[19] = 0x00  # realtime total LSB: not sent by model 43
+    payload[20] = 0x00  # realtime total MSB
+    return payload
+
+
+def test_GIVEN_scale_w_43_doc_advertisement_WHEN_parse_THEN_reports_only_sent_values() -> None:
+    """Verifies model 43 shows its weights and a calculated total, without realtime fields."""
+
+    adv = {MANUFACTURER_ID: bytes(_scale_w_43_doc_payload())}
+    parsed = parse_manufacturer_data("AA:BB:CC:43:30:07", adv)
+    assert parsed is not None
+    assert parsed.model_name == "Scale W"
+    assert parsed.firmware == "2.21"
+
+    entities = extract_entities(parsed)
+    assert set(entities) == {
+        SENSOR_BATT,
+        SENSOR_HUM,
+        SENSOR_SAMPLE_COUNT,
+        SENSOR_TEMP,
+        SENSOR_WEIGHT_L,
+        SENSOR_WEIGHT_R,
+        SENSOR_WEIGHT_REALTIME,
+    }
+    assert entities[SENSOR_BATT] == 2
+    assert entities[SENSOR_HUM] == 55
+    assert entities[SENSOR_SAMPLE_COUNT] == 33
+    assert math.isclose(entities[SENSOR_TEMP], 23.69, abs_tol=0.01)
+    assert entities[SENSOR_WEIGHT_L] == 0.0
+    assert entities[SENSOR_WEIGHT_R] == 0.06
+    assert entities[SENSOR_WEIGHT_REALTIME] == 0.12  # 2 x (left + right)
+
+
+def test_GIVEN_scale_w_43_WHEN_one_side_has_no_reading_THEN_no_total_weight() -> None:
+    """Verifies the calculated total is left out when one side of the scale has no weight."""
+
+    payload = _scale_w_43_doc_payload()
+    payload[12] = 0xFF  # weight right LSB: 0xFFFF -> no reading
+    payload[13] = 0xFF  # weight right MSB
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:43:30:07", adv)
+    assert parsed is not None
+
+    entities = extract_entities(parsed)
+    assert entities[SENSOR_WEIGHT_L] == 0.0
+    assert SENSOR_WEIGHT_R not in entities
+    assert SENSOR_WEIGHT_REALTIME not in entities
+
+
+@pytest.mark.parametrize(
+    ("model", "has_realtime"),
+    [
+        (41, False),  # T
+        (47, True),  # T
+        (42, False),  # TH
+        (56, True),  # TH
+        (43, False),  # Scale W
+        (57, True),  # Scale W
+        (49, True),  # Scale W3/W4
+        (58, True),  # DIY
+        (52, False),  # SubHub
+        (54, False),  # Hub 4G
+        (60, False),  # Hub Wifi
+        (63, False),  # BeeDar
+        (99, False),  # unknown
+    ],
+)
+def test_GIVEN_model_WHEN_parse_THEN_realtime_temperature_only_for_documented_models(
+    model: int, has_realtime: bool
+) -> None:
+    """Verifies only models documented to send it report a realtime temperature."""
+
+    payload = bytearray(21)
+    payload[0] = model  # model
+    payload[3] = 0x4C  # realtime temperature LSB: 7500 -> 25.00 °C
+    payload[4] = 80  # battery %
+    payload[9] = 0x1D  # realtime temperature MSB
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+
+    entities = extract_entities(parsed)
+    if has_realtime:
+        assert entities[SENSOR_TEMP_RT] == 25.0
+    else:
+        assert SENSOR_TEMP_RT not in entities
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_main", "expected_extra"),
+    [
+        (0x7FFF, 0.0, None),  # empty scale on a main channel, no load cell on an extra one
+        (0x8005, 0.06, 0.06),
+        (0xFFFF, None, None),  # no reading
+    ],
+)
+def test_GIVEN_raw_weight_WHEN_parse_THEN_main_and_extra_channels_decode_it(
+    raw: int, expected_main: float | None, expected_extra: float | None
+) -> None:
+    """Verifies which raw weight values are a weight on the main and extra channels."""
+
+    payload = bytearray(21)
+    payload[0] = 57  # model: Scale W with extra channels
+    payload[4] = 80  # battery %
+    payload[10] = raw & 0xFF  # weight left LSB
+    payload[11] = raw >> 8  # weight left MSB
+    payload[12] = raw & 0xFF  # weight right LSB
+    payload[13] = raw >> 8  # weight right MSB
+    payload[15] = raw & 0xFF  # weight left 2 LSB
+    payload[16] = raw >> 8  # weight left 2 MSB
+    payload[17] = raw & 0xFF  # weight right 2 LSB
+    payload[18] = raw >> 8  # weight right 2 MSB
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.weight_l_kg == expected_main
+    assert parsed.weight_r_kg == expected_main
+    assert parsed.weight_l2_kg == expected_extra
+    assert parsed.weight_r2_kg == expected_extra
+
+
+@pytest.mark.parametrize(
+    ("model", "model_name", "has_humidity"),
+    [
+        (49, "Scale W3/W4", False),
+        (57, "Scale W", True),
+        (58, "DIY", True),
+    ],
+)
+def test_GIVEN_scale_with_extra_channels_WHEN_parse_THEN_reports_all_weights(
+    model: int, model_name: str, has_humidity: bool
+) -> None:
+    """Verifies scales with extra channels report all four weights and the realtime total."""
+
+    payload = bytearray(21)
+    payload[0] = model  # model
+    payload[1] = 2  # v.minor
+    payload[2] = 1  # v.major
+    payload[3] = 0x4C  # realtime temperature LSB: 7500 -> 25.00 °C
+    payload[4] = 75  # battery %
+    payload[5] = 0x34  # elapsed LSB: 0x1234
+    payload[6] = 0x12  # elapsed MSB
+    payload[7] = 0x03  # temperature LSB: 5123 -> 1.23 °C
+    payload[8] = 0x14  # temperature MSB
+    payload[9] = 0x1D  # realtime temperature MSB
+    payload[10] = 0xE7  # weight left LSB: 10.00 kg -> 32767 + 1000 = 0x83E7
+    payload[11] = 0x83  # weight left MSB
+    payload[12] = 0x19  # weight right LSB: 10.50 kg -> 32767 + 1050 = 0x8419
+    payload[13] = 0x84  # weight right MSB
+    payload[14] = 50  # humidity %, ignored by model 49
+    payload[15] = 0xB5  # weight left 2 LSB: 9.50 kg -> 32767 + 950 = 0x83B5
+    payload[16] = 0x83  # weight left 2 MSB
+    payload[17] = 0xCE  # weight right 2 LSB: 9.75 kg -> 32767 + 975 = 0x83CE
+    payload[18] = 0x83  # weight right 2 MSB
+    payload[19] = 0x86  # realtime total LSB: 39.75 kg -> 32767 + 3975 = 0x8F86
+    payload[20] = 0x8F  # realtime total MSB
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("AA:BB:CC:DD:EE:FF", adv)
+    assert parsed is not None
+    assert parsed.model_name == model_name
+
+    entities = extract_entities(parsed)
+    assert set(entities) - {SENSOR_HUM} == {
+        SENSOR_BATT,
+        SENSOR_SAMPLE_COUNT,
+        SENSOR_TEMP,
+        SENSOR_TEMP_RT,
+        SENSOR_WEIGHT_L,
+        SENSOR_WEIGHT_R,
+        SENSOR_WEIGHT_L2,
+        SENSOR_WEIGHT_R2,
+        SENSOR_WEIGHT_REALTIME,
+    }
+    assert (SENSOR_HUM in entities) is has_humidity
+    assert entities[SENSOR_TEMP_RT] == 25.0
+    assert entities[SENSOR_WEIGHT_L] == 10.0
+    assert entities[SENSOR_WEIGHT_R] == 10.5
+    assert entities[SENSOR_WEIGHT_L2] == 9.5
+    assert entities[SENSOR_WEIGHT_R2] == 9.75
+    assert entities[SENSOR_WEIGHT_REALTIME] == 39.75

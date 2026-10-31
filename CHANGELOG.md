@@ -12,6 +12,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The swarm state sensor now explains what its number means, for example
   "Started - checking for swarm event" or "Swarm event detected". You'll find this as a
   description on the sensor.
+- BroodMinder DIY scales now show their weight: Weight Left, Weight Right, Weight Left 2,
+  Weight Right 2 and Weight Realtime.
+- The original BroodMinder-W scale (model 43) now shows the total hive weight as Weight
+  Realtime. This scale weighs one side of the hive, so the total is twice the left plus right
+  weight.
 
 ### Changed
 
@@ -25,6 +30,22 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sensor now shows "Unknown" instead of a date around 1970 ("56 years ago").
 - Setup messages, such as "Device is already configured", now show properly in Home
   Assistant.
+- The original BroodMinder-W scale (model 43) no longer shows a realtime temperature of
+  −40 °C, or impossible weights such as −327 kg for Weight Left 2, Weight Right 2 and Weight
+  Realtime.
+- Realtime temperature is only shown for BroodMinders that measure it. The original
+  BroodMinder-T and -TH (models 41 and 42), the SubHub, the hubs and the BeeDar no longer show
+  a meaningless value.
+- Scale weights of 0.00 kg and 0.06 kg, for example on an empty scale, are no longer ignored.
+- Sensors that are no longer created stay listed in Home Assistant as no longer provided: Realtime
+  Temp on the models above, and Weight Left 2 and Weight Right 2 on the BroodMinder-W
+  (model 43). You can delete them from the device page.
+
+### Documentation
+
+- The README has a table showing which sensors each BroodMinder model gets.
+- The README's list of supported devices now includes model numbers and DIY scales, and says
+  which devices are only partly supported or not supported yet.
 
 ### Internal
 

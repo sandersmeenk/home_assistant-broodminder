@@ -21,6 +21,8 @@ pytestmark = pytest.mark.usefixtures("enable_custom_integrations", "enable_bluet
 TH_ADDRESS = "AA:BB:CC:00:00:01"
 SCALE_ADDRESS = "AA:BB:CC:00:00:02"
 T_ADDRESS = "AA:BB:CC:00:00:03"
+SCALE_W_43_ADDRESS = "AA:BB:CC:00:00:04"
+EXTRA_CHANNELS_ADDRESS = "AA:BB:CC:00:00:05"
 OTHER_VENDOR_ID = 0x004C
 
 SWARM_TIME = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
@@ -59,6 +61,35 @@ def _scale_payload() -> bytes:
     _le16(payload, 15, 16, 0x7FFF)  # left 2: not connected
     _le16(payload, 17, 18, 0x7FFF)  # right 2: not connected
     _le16(payload, 19, 20, 32767 + 4150)  # realtime total 41.50 kg
+    return bytes(payload)
+
+
+def _scale_w_43_payload() -> bytes:
+    """Model 43 advertisement from the BroodMinder docs (87_physics_and_tech_stuff)."""
+    return bytes.fromhex(
+        "2b"  # model 43
+        "1502"  # v.minor, v.major
+        "00"  # realtime temperature LSB: not sent by model 43
+        "02"  # battery %
+        "2100"  # elapsed: 33
+        "d062"  # temperature: SHT raw 0x62D0 -> 23.69 °C
+        "00"  # realtime temperature MSB: not sent by model 43
+        "ff7f"  # weight left: 0.00 kg
+        "0580"  # weight right: 0.06 kg
+        "37"  # humidity: 55%
+        "07304300"  # device id 43:30:07, LSB first: not a weight
+        "0000"  # realtime total: not sent by model 43
+    )
+
+
+def _extra_channels_payload(model: int) -> bytes:
+    payload = _payload(model=model, battery=75, temp_c=20.0)
+    _le16(payload, 10, 11, 32767 + 1000)  # left 10.00 kg
+    _le16(payload, 12, 13, 32767 + 1050)  # right 10.50 kg
+    payload[14] = 50  # humidity, ignored by model 49
+    _le16(payload, 15, 16, 32767 + 950)  # left 2 9.50 kg
+    _le16(payload, 17, 18, 32767 + 975)  # right 2 9.75 kg
+    _le16(payload, 19, 20, 32767 + 3975)  # realtime total 39.75 kg
     return bytes(payload)
 
 
@@ -244,12 +275,86 @@ async def test_GIVEN_loaded_entry_WHEN_unloaded_THEN_sensors_unavailable(
     assert hass.states.get("sensor.broodminder_th_00_00_01_temperature").state == "unavailable"
 
 
+async def _setup_device(hass: HomeAssistant, address: str, payload: bytes) -> None:
+    """Discover a device, then advertise again so its entities are created."""
+    _inject(hass, address, payload)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    _inject(hass, address, payload)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
 async def _setup_t_sensor(hass: HomeAssistant, payload: bytes) -> None:
     """Discover the T sensor, then advertise again so its entities are created."""
-    _inject(hass, T_ADDRESS, payload)
-    await hass.async_block_till_done(wait_background_tasks=True)
-    _inject(hass, T_ADDRESS, payload)
-    await hass.async_block_till_done(wait_background_tasks=True)
+    await _setup_device(hass, T_ADDRESS, payload)
+
+
+def _sensors_of(hass: HomeAssistant, prefix: str) -> set[str]:
+    """Return the sensor names of one device, without its entity id prefix."""
+    return {
+        entity_id.removeprefix(f"{prefix}_")
+        for entity_id in hass.states.async_entity_ids("sensor")
+        if entity_id.startswith(f"{prefix}_")
+    }
+
+
+async def test_GIVEN_scale_w_43_WHEN_advertising_THEN_only_sent_values_and_calculated_total(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies model 43 gets its weights and a calculated total, without realtime sensors."""
+
+    await _setup_device(hass, SCALE_W_43_ADDRESS, _scale_w_43_payload())
+
+    scale = "sensor.broodminder_scale_w_00_00_04"
+    assert _sensors_of(hass, scale) == {
+        "battery",
+        "humidity",
+        "sample_count",
+        "temperature",
+        "weight_left",
+        "weight_right",
+        "weight_realtime",
+    }
+    assert round(float(hass.states.get(f"{scale}_temperature").state), 2) == 23.69
+    assert float(hass.states.get(f"{scale}_weight_left").state) == 0.0
+    assert float(hass.states.get(f"{scale}_weight_right").state) == 0.06
+    assert float(hass.states.get(f"{scale}_weight_realtime").state) == 0.12
+
+
+@pytest.mark.parametrize(
+    ("model", "prefix", "has_humidity"),
+    [
+        (49, "sensor.broodminder_scale_w3_w4_00_00_05", False),
+        (57, "sensor.broodminder_scale_w_00_00_05", True),
+        (58, "sensor.broodminder_diy_00_00_05", True),
+    ],
+)
+async def test_GIVEN_scale_with_extra_channels_WHEN_advertising_THEN_all_weight_sensors_created(
+    hass: HomeAssistant, model: int, prefix: str, has_humidity: bool
+) -> None:
+    """Verifies scales with extra channels get all four weights and the realtime total."""
+
+    await _setup_device(hass, EXTRA_CHANNELS_ADDRESS, _extra_channels_payload(model))
+
+    expected = {
+        "battery",
+        "realtime_temp",
+        "sample_count",
+        "temperature",
+        "weight_left",
+        "weight_right",
+        "weight_left_2",
+        "weight_right_2",
+        "weight_realtime",
+    }
+    if has_humidity:
+        expected.add("humidity")
+    assert _sensors_of(hass, prefix) == expected
+    assert float(hass.states.get(f"{prefix}_weight_left").state) == 10.0
+    assert float(hass.states.get(f"{prefix}_weight_right").state) == 10.5
+    assert float(hass.states.get(f"{prefix}_weight_left_2").state) == 9.5
+    assert float(hass.states.get(f"{prefix}_weight_right_2").state) == 9.75
+    assert float(hass.states.get(f"{prefix}_weight_realtime").state) == 39.75
+    assert hass.states.get(f"{prefix}_weight_left").attributes["unit_of_measurement"] == "kg"
 
 
 async def test_GIVEN_t_sensor_with_unsynced_clock_WHEN_advertising_THEN_swarm_time_unknown(

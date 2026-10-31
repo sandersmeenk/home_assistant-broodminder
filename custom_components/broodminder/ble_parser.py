@@ -7,6 +7,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .const import (
+    CALCULATED_TOTAL_WEIGHT_MODELS,
+    EXTRA_WEIGHT_MODELS,
+    HALF_HIVE_WEIGHT_FACTOR,
     ID_TO_MODEL,
     IDX_BATTERY,
     IDX_ELAPSED_H,
@@ -34,9 +37,9 @@ from .const import (
     MIN_PAYLOAD_LEN,
     MODEL_T,
     MODEL_TH,
-    MODEL_W,
-    MODEL_W3_W4,
     NO_HUMIDITY_MODELS,
+    REALTIME_MODELS,
+    SCALE_MODELS,
     SENSOR_BATT,
     SENSOR_HUM,
     SENSOR_PERCENTAGE_MAXIMUM,
@@ -53,6 +56,8 @@ from .const import (
     SENSOR_WEIGHT_REALTIME,
     SPECIAL_TEMP_MODELS_F,
     SWARM_TIME_MIN_VALID_UNIX,
+    WEIGHT_RAW_NO_READING,
+    WEIGHT_RAW_NOT_CONNECTED,
 )
 
 
@@ -114,18 +119,20 @@ def _parse_humidity(model: int, raw: int) -> int | None:
     return raw
 
 
-def _parse_weight_kg(model: int, lo: int, hi: int) -> float | None:
-    weight = None
+def _parse_weight_kg(
+    model: int, lo: int, hi: int, *, extra_channel: bool = False
+) -> float | None:
+    if model not in SCALE_MODELS:
+        return None
 
-    if model in MODEL_W or model in MODEL_W3_W4:
-        raw = lo | (hi << 8)
+    raw = lo | (hi << 8)
+    if raw == WEIGHT_RAW_NO_READING:
+        return None
+    if extra_channel and raw == WEIGHT_RAW_NOT_CONNECTED:
+        return None
 
-        # Known sentinel "no weight" values (docs/examples):
-        if raw not in (0x7FFF, 0x8005, 0xFFFF):
-            # Signed with -32767 offset; then scale 1/100 (kg)
-            weight = (raw - 32767) / 100.0
-
-    return weight
+    # Signed with -32767 offset; then scale 1/100 (kg)
+    return (raw - 32767) / 100.0
 
 
 def _parse_swarm_time(model: int, t1: int, t2: int, t3: int, t4: int) -> datetime | None:
@@ -195,7 +202,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
 
     # Realtime temperature
     temperature_rt_c = None
-    if len(payload) > IDX_RT_TEMP1_L and len(payload) > IDX_RT_TEMP2_L:
+    if model in REALTIME_MODELS and len(payload) > IDX_RT_TEMP2_L:
         temperature_rt_c = _parse_temperature_c(
             model, payload[IDX_RT_TEMP1_L], payload[IDX_RT_TEMP2_L]
         )
@@ -225,8 +232,13 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         )
 
         # Expose as weights for models where these are extra weight channels
-        weight_l2_kg = _parse_weight_kg(model, payload[IDX_WL2_SM0], payload[IDX_WL2_SM1])
-        weight_r2_kg = _parse_weight_kg(model, payload[IDX_WR2_SM2], payload[IDX_WR2_SM3])
+        if model in EXTRA_WEIGHT_MODELS:
+            weight_l2_kg = _parse_weight_kg(
+                model, payload[IDX_WL2_SM0], payload[IDX_WL2_SM1], extra_channel=True
+            )
+            weight_r2_kg = _parse_weight_kg(
+                model, payload[IDX_WR2_SM2], payload[IDX_WR2_SM3], extra_channel=True
+            )
 
     # Realtime total or swarm state
     weight_realtime_total_kg = None
@@ -234,9 +246,18 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
 
     if len(payload) > IDX_RT_TOTAL_H:
         swarm_state = _parse_swarm_state(model, payload[IDX_RT_TOTAL_L_OR_SWARM_STATE])
-        weight_realtime_total_kg = _parse_weight_kg(
-            model, payload[IDX_RT_TOTAL_L_OR_SWARM_STATE], payload[IDX_RT_TOTAL_H]
-        )
+        if model in REALTIME_MODELS:
+            weight_realtime_total_kg = _parse_weight_kg(
+                model, payload[IDX_RT_TOTAL_L_OR_SWARM_STATE], payload[IDX_RT_TOTAL_H]
+            )
+
+    # Models without a realtime total: calculate it from the left and right weights
+    if (
+        model in CALCULATED_TOTAL_WEIGHT_MODELS
+        and weight_l_kg is not None
+        and weight_r_kg is not None
+    ):
+        weight_realtime_total_kg = round(HALF_HIVE_WEIGHT_FACTOR * (weight_l_kg + weight_r_kg), 2)
 
     # Device label
     model_name = _get_model_name_from_model_id(model)

@@ -83,6 +83,13 @@ GitHub Actions run on pushes to `main` and `develop` and on pull requests:
 
 Neither validator can run in the devcontainer, so check their results on GitHub.
 
+## README
+
+`README.md` is the user documentation shown on GitHub and in HACS. Update it in the same commit
+as any change to what it describes: the sensors and what they mean, the sensors-per-device table,
+supported devices, or installation and setup. Like the changelog, write it for beekeepers using
+Home Assistant, not programmers.
+
 ## Changelog
 
 `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/): one section

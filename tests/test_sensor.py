@@ -44,14 +44,12 @@ def test_GIVEN_model_th_WHEN_build_update_THEN_device_model_is_model_name() -> N
     assert device["sw_version"] == "1.2"
 
 
-def test_GIVEN_model_w_WHEN_build_update_THEN_temperature_and_weight_have_display_precision() -> (
-    None
-):
+def test_GIVEN_scale_w_57_WHEN_build_update_THEN_temperature_and_weight_have_precision() -> None:
     """Verifies temperature and weight sensors suggest a display precision."""
 
-    raw_temp = 0x5A00  # SHT raw -> 18.0078... °C
+    raw_temp = 0x1D4C  # 7500 -> 25.00 °C
     payload = bytearray(21)
-    payload[0] = 43  # model
+    payload[0] = 57  # model
     payload[1] = 2  # v.minor
     payload[2] = 1  # v.major
     payload[3] = raw_temp & 0xFF  # realtime temperature LSB

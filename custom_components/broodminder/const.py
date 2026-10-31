@@ -57,6 +57,24 @@ SPECIAL_TEMP_MODELS_F = {41, 42, 43}
 # Models without humidity in adv payload:
 NO_HUMIDITY_MODELS = {41, 47, 49, 52}
 
+# Models with weight channels in adv payload:
+SCALE_MODELS = MODEL_W | MODEL_W3_W4 | MODEL_DIY
+
+# Models with realtime temperature and realtime total weight (docs: "SM & XLR"):
+REALTIME_MODELS = {47, 49, 56, 57, 58}
+
+# Models with extra weight channels instead of SM time (docs: "XLR"):
+EXTRA_WEIGHT_MODELS = {49, 57, 58}
+
+# Scale W (43) sends no total: it measures half the hive, so total = 2 x (left + right)
+CALCULATED_TOTAL_WEIGHT_MODELS = {43}
+HALF_HIVE_WEIGHT_FACTOR = 2
+
+# Raw weight values without a reading
+WEIGHT_RAW_NO_READING = 0xFFFF
+# Raw 0x7FFF is 0.00 kg, but on an extra weight channel it means no load cell is connected
+WEIGHT_RAW_NOT_CONNECTED = 0x7FFF
+
 # Model names
 MODELS: dict[str, set[int]] = {
     "T": MODEL_T,
