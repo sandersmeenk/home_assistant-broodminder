@@ -28,6 +28,9 @@
                 "Anthropic.claude-code"
             ],
             "settings": {
+                "[markdown]": {
+                    "files.trimTrailingWhitespace": false
+                },
                 "[python]": {
                     "editor.defaultFormatter": "charliermarsh.ruff"
                 },
