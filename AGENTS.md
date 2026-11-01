@@ -9,9 +9,15 @@ BroodMinder beehive sensors from Bluetooth LE advertisements. It's distributed v
 
 - `custom_components/broodminder/` — the integration
   - `ble_parser.py` — decodes manufacturer data (ID `0x028D`) into `ManufacturerData`
-  - `config_flow.py` — Bluetooth discovery flow, one config entry per device address
-  - `sensor.py` — maps parsed data to sensor entities via HA's passive Bluetooth processor
-  - `const.py` — payload indices, model IDs and entity keys
+  - `config_flow.py` — Bluetooth discovery flow, one config entry per device address, and the
+    per-hive brood settings (options flow)
+  - `sensor.py` — maps parsed data to sensor entities via HA's passive Bluetooth processor,
+    plus the Brood sensor
+  - `brood.py` — brood estimate algorithm, without Home Assistant dependencies
+  - `brood_tracker.py` — per-hive sampling, outdoor temperature lookup, storage and repairs for
+    the brood estimate
+  - `const.py` — payload indices, model IDs, entity keys and brood estimate constants
+- `BROOD_ESTIMATE.md` — technical specification of the brood estimate (see below)
 - `tests/` — pytest suite
 - `scripts/` — developer scripts (see below)
 - `config/` — local Home Assistant config for `scripts/develop`; only
@@ -47,7 +53,8 @@ scripts/test                          # full suite with coverage (htmlcov/, cove
 pytest tests/test_config_flow.py      # a single module
 ```
 
-- `tests/test_ble_parser.py` and `tests/test_sensor.py` are plain unit tests.
+- `tests/test_ble_parser.py`, `tests/test_sensor.py` and `tests/test_brood.py` are plain unit
+  tests.
 - `tests/test_config_flow.py` is an end-to-end test: it starts an in-memory Home Assistant,
   mocks a Bluetooth adapter, injects fake BroodMinder advertisements and checks discovery,
   config entries, devices and sensor states. Use this pattern for behaviour that spans
@@ -89,6 +96,23 @@ Neither validator can run in the devcontainer, so check their results on GitHub.
 as any change to what it describes: the sensors and what they mean, the sensors-per-device table,
 supported devices, or installation and setup. Like the changelog, write it for beekeepers using
 Home Assistant, not programmers.
+
+## Brood estimate specification
+
+`BROOD_ESTIMATE.md` is the technical specification of the brood estimate: requirements,
+design decisions, formulas, constants, settings, repairs, persistence, and which tests verify
+which requirement. It's used for review and verification later, so it must match the code.
+
+- Update it in the same commit as any change to the brood estimate's behaviour: the algorithm
+  or its constants, the outdoor temperature lookup, the settings, the Brood sensor and its
+  attributes, the repairs, storage, or which models get a brood estimate.
+- When the algorithm or a constant changes, recompute the reference values table (section
+  6.8) with the scenarios in `tests/test_brood.py`.
+- Give new requirements and decisions the next free ID (`R16`, `D15`, ...) and don't renumber
+  existing ones. When a decision is reversed, update it and record why.
+- Keep the verification table (section 14) in step with the tests: add new tests and rename
+  renamed ones.
+- Unlike the README and changelog, write it for developers reviewing the code.
 
 ## Changelog
 

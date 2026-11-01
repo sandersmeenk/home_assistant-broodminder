@@ -21,16 +21,26 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from .ble_parser import ManufacturerData, extract_entities
+from . import BroodMinderData
+from .ble_parser import ManufacturerData, device_name, extract_entities, model_name
+from .brood_tracker import BroodTracker
 from .const import (
     ATTR_DESCRIPTION,
+    ATTR_HOURS_USED,
+    ATTR_LEVEL,
+    ATTR_OUTDOOR_ENTITY,
+    ATTR_SENSOR_POSITION,
+    ATTR_STABILITY,
+    ATTR_STATUS,
+    CONF_MODEL,
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATT,
+    SENSOR_BROOD,
     SENSOR_HUM,
     SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
@@ -104,6 +114,12 @@ class BMDescriptions:
     )
     swarm_time: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_SWARM_TIME, icon="mdi:clock-outline"
+    )
+    brood: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_BROOD,
+        icon="mdi:hexagon-multiple",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
     )
 
 
@@ -215,11 +231,62 @@ async def async_setup_entry(
         processor.async_add_entities_listener(BroodMinderSensorEntity, async_add_entities)
     )
 
-    # Get coordinator stored by __init__.py
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    # Get coordinator and brood tracker stored by __init__.py
+    data: BroodMinderData = hass.data[DOMAIN][entry.entry_id]
 
     # Register the processor with the coordinator
-    entry.async_on_unload(coordinator.async_register_processor(processor))
+    entry.async_on_unload(data.coordinator.async_register_processor(processor))
+
+    if data.brood_tracker is not None:
+        async_add_entities(
+            [
+                BroodMinderBroodSensor(
+                    data.brood_tracker, data.coordinator.address, entry.data[CONF_MODEL]
+                )
+            ]
+        )
+
+
+class BroodMinderBroodSensor(SensorEntity):
+    """Brood estimate of a hive, from its temperature and the outdoor temperature."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_name = "Brood"
+    entity_description = DESCRIPTIONS.brood
+
+    def __init__(self, tracker: BroodTracker, address: str, model: int) -> None:
+        """Initialize the sensor on the hive's device, also before it has advertised."""
+        self._tracker = tracker
+        self._attr_unique_id = f"{address}-{SENSOR_BROOD}"
+        self._attr_device_info = DeviceInfo(
+            connections={(CONNECTION_BLUETOOTH, address)},
+            manufacturer=MANUFACTURER,
+            name=device_name(address, model),
+            model=model_name(model),
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Update the state after every sample."""
+        self.async_on_remove(self._tracker.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the brood estimate in percent."""
+        return self._tracker.estimate.brood_percent
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return how the estimate was made, and why it may be unknown."""
+        estimate = self._tracker.estimate
+        return {
+            ATTR_STATUS: self._tracker.status,
+            ATTR_LEVEL: None if estimate.level is None else round(estimate.level, 2),
+            ATTR_STABILITY: None if estimate.stability is None else round(estimate.stability, 2),
+            ATTR_HOURS_USED: estimate.hours_used,
+            ATTR_OUTDOOR_ENTITY: self._tracker.outdoor_entity_id,
+            ATTR_SENSOR_POSITION: self._tracker.position,
+        }
 
 
 class BroodMinderSensorEntity(

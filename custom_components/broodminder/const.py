@@ -1,5 +1,7 @@
 """Constants for the BroodMinder integration."""
 
+from datetime import timedelta
+
 DOMAIN = "broodminder"
 
 MANUFACTURER_ID = 0x028D  # IF, LLC (BroodMinder)
@@ -50,6 +52,9 @@ MODEL_HUB_4G = {54}
 MODEL_DIY = {58}
 MODEL_HUB_WIFI = {60}
 MODEL_BEEDAR = {63}
+
+# Models measuring in-hive temperature, the only ones with a brood estimate
+BROOD_MODELS = MODEL_T | MODEL_TH
 
 # Models with SHT-like temperature formula:
 SPECIAL_TEMP_MODELS_F = {41, 42, 43}
@@ -133,3 +138,58 @@ SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100
 
 MANUFACTURER = "BroodMinder"
+
+# Config entry data: the model id, so a hive gets its brood sensor before it advertises
+CONF_MODEL = "model"
+
+# Hive settings (config entry options)
+CONF_SENSOR_POSITION = "sensor_position"
+CONF_OUTDOOR_ENTITY = "outdoor_entity"
+POSITION_TOP_OF_FRAMES = "top_of_frames"  # BroodMinder's standard placement
+POSITION_IN_COMB = "in_comb"  # between frames, at brood height
+SENSOR_POSITIONS = [POSITION_TOP_OF_FRAMES, POSITION_IN_COMB]
+DEFAULT_SENSOR_POSITION = POSITION_TOP_OF_FRAMES
+
+# Brood estimate
+SENSOR_BROOD = "brood"
+BROOD_TEMP_C = 35.0  # temperature the colony keeps the brood nest at
+# Below this an hour counts as no brood; on top of the frames runs cooler than in the comb
+BROOD_EDGE_TEMP_C: dict[str, float] = {POSITION_TOP_OF_FRAMES: 30.0, POSITION_IN_COMB: 32.0}
+# How much warmer than outdoors the colony keeps the hive without raising brood
+COLONY_WARMING_C = 4.0
+# An hour counts fully when its reference is at least this far below brood temperature
+FULL_WEIGHT_SPAN_C = 5.0
+# A hive swinging at most this share of the outdoor swing counts as fully stable
+STABLE_SWING_RATIO = 0.2
+# On days with a smaller outdoor swing (overcast), stability tells nothing and is skipped
+MIN_OUTDOOR_SWING_C = 3.0
+BROOD_WINDOW_HOURS = 24
+BROOD_MIN_HOURS = 18  # hours in the window with both temperatures
+BROOD_HISTORY_HOURS = 48  # hours kept in storage
+BROOD_SAMPLE_INTERVAL = timedelta(minutes=5)
+BROOD_STORAGE_VERSION = 1
+# Short outages of the outdoor temperature are normal; only longer ones raise a repair
+OUTDOOR_UNAVAILABLE_ISSUE_AFTER = timedelta(hours=3)
+
+# Automatic outdoor temperature: Met.no's weather entity for the home location, created
+# during onboarding
+MET_DOMAIN = "met"
+MET_HOME_UNIQUE_ID = "home"
+
+# Brood status: why the estimate may be unknown
+BROOD_STATUS_OK = "ok"
+BROOD_STATUS_NOT_ENOUGH_DATA = "not_enough_data"
+BROOD_STATUS_TOO_HOT = "too_hot"
+BROOD_STATUS_NO_OUTDOOR_TEMPERATURE = "no_outdoor_temperature"
+
+# Brood sensor attributes
+ATTR_STATUS = "status"
+ATTR_LEVEL = "level"
+ATTR_STABILITY = "stability"
+ATTR_HOURS_USED = "hours_used"
+ATTR_OUTDOOR_ENTITY = "outdoor_entity"
+ATTR_SENSOR_POSITION = "sensor_position"
+
+# Repair issues
+ISSUE_NO_WEATHER_ENTITY = "no_weather_entity"
+ISSUE_OUTDOOR_UNAVAILABLE = "outdoor_temperature_unavailable"
