@@ -7,6 +7,19 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.5.0] - Unreleased
 
+### Added
+
+- BroodMinder-T and -TH hives have a new Brood sensor: an estimate from 0 to 100% of the brood
+  near the sensor, from the hive temperature and the outdoor temperature. It needs no scale. See
+  "Brood estimate" in the README for how it works and what the percentage means.
+- Each T and TH hive has settings (**Configure** on the hive): where the sensor sits in the
+  hive, and which outdoor temperature to use. By default the outdoor temperature comes from
+  Home Assistant's weather.
+- When the brood estimate has no outdoor temperature, a repair under **Settings** > **System** >
+  **Repairs** explains how to fix it.
+- Hives added before this version get their Brood sensor and settings after their first
+  broadcast once you've updated.
+
 ### Changed
 
 - Newer BroodMinder firmware also sends the remaining battery life, based on how long the device

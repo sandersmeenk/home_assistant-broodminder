@@ -4,18 +4,40 @@
 
 from datetime import UTC, datetime
 import time
+from typing import Any
 
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, _get_manager
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigEntry, ConfigEntryState
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 import pytest
-from pytest_homeassistant_custom_component.common import mock_restore_cache_with_extra_data
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+    mock_restore_cache_with_extra_data,
+)
 
-from custom_components.broodminder.const import DOMAIN, MANUFACTURER, MANUFACTURER_ID
+from custom_components.broodminder.const import (
+    BROOD_SAMPLE_INTERVAL,
+    CONF_MODEL,
+    CONF_OUTDOOR_ENTITY,
+    CONF_SENSOR_POSITION,
+    DOMAIN,
+    ISSUE_NO_WEATHER_ENTITY,
+    ISSUE_OUTDOOR_UNAVAILABLE,
+    MANUFACTURER,
+    MANUFACTURER_ID,
+    POSITION_IN_COMB,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations", "enable_bluetooth")
 
@@ -48,8 +70,8 @@ def _payload(model: int, battery: int, temp_c: float) -> bytearray:
     return payload
 
 
-def _th_payload() -> bytes:
-    payload = _payload(model=56, battery=90, temp_c=25.0)
+def _th_payload(temp_c: float = 25.0) -> bytes:
+    payload = _payload(model=56, battery=90, temp_c=temp_c)
     payload[14] = 55  # humidity
     return bytes(payload)
 
@@ -562,3 +584,287 @@ async def test_GIVEN_unusable_restored_battery_readings_WHEN_reading_arrives_THE
     await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
 
     assert _battery(hass) == ("90", 90, None)
+
+
+TH_BROOD = "sensor.broodminder_th_00_00_01_brood"
+T_BROOD = "sensor.broodminder_t_00_00_03_brood"
+OUTDOOR_SENSOR = "sensor.outdoor"
+OUTDOOR_FAHRENHEIT = {"unit_of_measurement": "°F", "device_class": "temperature"}
+WEATHER_ATTRIBUTES = {"temperature": 18.0, "temperature_unit": "°C"}
+SAMPLES_PER_HOUR = 12
+
+
+async def _setup_hive(
+    hass: HomeAssistant, options: dict[str, str] | None = None
+) -> MockConfigEntry:
+    """Set up the TH hive's entry as discovery creates it, with brood settings."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=TH_ADDRESS,
+        title=f"BroodMinder {TH_ADDRESS}",
+        data={CONF_MODEL: 56},
+        options=options or {},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def _pass_time(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    samples: int,
+    hive_c: float | None = None,
+) -> None:
+    """Move time on by a number of brood samples, with the TH hive advertising hive_c."""
+    for _ in range(samples):
+        if hive_c is not None:
+            _inject(hass, TH_ADDRESS, _th_payload(temp_c=hive_c))
+        freezer.tick(BROOD_SAMPLE_INTERVAL)
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+
+async def _run_due_timers(hass: HomeAssistant) -> None:
+    """Run timers that are due now, such as a scheduled save, without moving time on."""
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_GIVEN_t_and_scale_WHEN_discovered_THEN_only_t_gets_brood_sensor_and_settings(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies only models measuring in-hive temperature get a brood estimate."""
+
+    await _setup_device(hass, T_ADDRESS, _t_payload())
+    await _setup_device(hass, SCALE_ADDRESS, _scale_payload())
+
+    t_entry = _entry_for(hass, T_ADDRESS)
+    scale_entry = _entry_for(hass, SCALE_ADDRESS)
+    assert t_entry.data == {CONF_MODEL: 47}
+    assert t_entry.supports_options
+    assert not scale_entry.supports_options
+    assert hass.states.get(T_BROOD) is not None
+    assert "brood" not in _sensors_of(hass, "sensor.broodminder_scale_w_00_00_02")
+
+
+async def test_GIVEN_only_a_scale_WHEN_no_weather_entity_THEN_no_repair(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+) -> None:
+    """Verifies a scale, which has no brood estimate, doesn't ask for an outdoor temperature."""
+
+    await _setup_device(hass, SCALE_ADDRESS, _scale_payload())
+
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is None
+
+
+async def test_GIVEN_hive_WHEN_brood_settings_saved_THEN_hive_reloads_with_them(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies the settings dialog stores the sensor position and outdoor temperature."""
+
+    entry = await _setup_hive(hass)
+    settings = {CONF_SENSOR_POSITION: POSITION_IN_COMB, CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR}
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input=settings
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == settings
+    attributes = hass.states.get(TH_BROOD).attributes
+    assert attributes["sensor_position"] == POSITION_IN_COMB
+    assert attributes["outdoor_entity"] == OUTDOOR_SENSOR
+
+
+async def test_GIVEN_no_weather_entity_WHEN_hive_set_up_THEN_brood_unknown_and_repair_raised(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+) -> None:
+    """Verifies a missing outdoor temperature shows on the sensor and as a repair."""
+
+    await _setup_hive(hass)
+
+    state = hass.states.get(TH_BROOD)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["status"] == "no_outdoor_temperature"
+    assert state.attributes["outdoor_entity"] is None
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is not None
+
+
+async def test_GIVEN_no_weather_repair_WHEN_weather_entity_added_THEN_used_and_repair_gone(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, issue_registry: ir.IssueRegistry
+) -> None:
+    """Verifies a new weather entity is picked up at the next sample, without a restart."""
+
+    await _setup_hive(hass)
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is not None
+
+    hass.states.async_set("weather.home", "sunny", WEATHER_ATTRIBUTES)
+    await _pass_time(hass, freezer, 1)
+
+    state = hass.states.get(TH_BROOD)
+    assert state.attributes["outdoor_entity"] == "weather.home"
+    assert state.attributes["status"] == "not_enough_data"
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is None
+
+
+async def test_GIVEN_no_weather_repair_WHEN_hive_unloaded_THEN_repair_gone(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+) -> None:
+    """Verifies the repair doesn't outlive the last hive that needs a weather entity."""
+
+    entry = await _setup_hive(hass)
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is not None
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is None
+
+
+async def test_GIVEN_met_home_and_other_weather_WHEN_hive_set_up_THEN_met_home_used(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """Verifies Met.no's Forecast Home is preferred over other weather entities."""
+
+    entity_registry.async_get_or_create(
+        "weather", "met", "home", suggested_object_id="forecast_home"
+    )
+    hass.states.async_set("weather.forecast_home", "sunny", WEATHER_ATTRIBUTES)
+    hass.states.async_set("weather.other", "rainy", WEATHER_ATTRIBUTES)
+
+    await _setup_hive(hass)
+
+    assert hass.states.get(TH_BROOD).attributes["outdoor_entity"] == "weather.forecast_home"
+
+
+async def test_GIVEN_several_weather_entities_without_met_home_WHEN_set_up_THEN_repair_raised(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+) -> None:
+    """Verifies the integration doesn't guess between weather entities."""
+
+    hass.states.async_set("weather.one", "sunny", WEATHER_ATTRIBUTES)
+    hass.states.async_set("weather.two", "rainy", WEATHER_ATTRIBUTES)
+
+    await _setup_hive(hass)
+
+    assert hass.states.get(TH_BROOD).attributes["outdoor_entity"] is None
+    assert issue_registry.async_get_issue(DOMAIN, ISSUE_NO_WEATHER_ENTITY) is not None
+
+
+async def test_GIVEN_hive_held_at_35_WHEN_hours_pass_THEN_brood_estimated_and_kept_on_reload(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Verifies the estimate from advertisements and an outdoor sensor in °F, end to end."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    # 59 °F is 15 °C; read as 59 °C it would be too hot to give an estimate
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = await _setup_hive(hass, {CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR})
+
+    await _pass_time(hass, freezer, 17 * SAMPLES_PER_HOUR, hive_c=35.0)
+    state = hass.states.get(TH_BROOD)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["status"] == "not_enough_data"
+
+    await _pass_time(hass, freezer, 3 * SAMPLES_PER_HOUR, hive_c=35.0)
+    state = hass.states.get(TH_BROOD)
+    assert state.state == "100"
+    assert state.attributes["status"] == "ok"
+    assert state.attributes["hours_used"] == 20
+
+    # The hours are stored, so the estimate is back right after a reload
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(TH_BROOD).state == "100"
+
+
+async def test_GIVEN_outdoor_sensor_unavailable_WHEN_3_hours_pass_THEN_repair_until_back(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, issue_registry: ir.IssueRegistry
+) -> None:
+    """Verifies a chosen outdoor sensor that stays unavailable raises a repair for the hive."""
+
+    hass.states.async_set(OUTDOOR_SENSOR, STATE_UNAVAILABLE)
+    entry = await _setup_hive(hass, {CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR})
+    issue_id = f"{ISSUE_OUTDOOR_UNAVAILABLE}_{entry.entry_id}"
+
+    await _pass_time(hass, freezer, 3 * SAMPLES_PER_HOUR - 1)
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+    assert hass.states.get(TH_BROOD).attributes["status"] == "no_outdoor_temperature"
+
+    await _pass_time(hass, freezer, 1)
+    issue = issue_registry.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders == {
+        "hive": "BroodMinder-TH 00:00:01",
+        "entity_id": OUTDOOR_SENSOR,
+    }
+
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    await _pass_time(hass, freezer, 1)
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_GIVEN_entry_from_before_brood_WHEN_t_advertises_THEN_brood_sensor_added(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies an entry without a stored model learns it and gets its brood sensor."""
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=T_ADDRESS, title=f"BroodMinder {T_ADDRESS}", data={}
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert not entry.supports_options
+    assert hass.states.get(T_BROOD) is None
+
+    _inject(hass, T_ADDRESS, _t_payload())
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert entry.data == {CONF_MODEL: 47}
+    assert hass.states.get(T_BROOD) is not None
+
+
+async def test_GIVEN_hive_with_stored_hours_WHEN_removed_THEN_brood_history_deleted(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies removing a hive doesn't leave its brood history behind."""
+
+    entry = await _setup_hive(hass)
+    storage_key = f"{DOMAIN}.brood.{entry.entry_id}"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert storage_key in hass_storage  # saved when the hive unloads
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert storage_key not in hass_storage
+
+
+async def test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies the hours are stored every hour, so a crash loses at most the hour in progress."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = await _setup_hive(hass, {CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR})
+    storage_key = f"{DOMAIN}.brood.{entry.entry_id}"
+    await _run_due_timers(hass)
+    hass_storage.pop(storage_key)  # stored when sampling starts in a new hour
+
+    await _pass_time(hass, freezer, 11, hive_c=35.0)  # 12:57, still the same hour
+    await _run_due_timers(hass)
+    assert storage_key not in hass_storage
+
+    await _pass_time(hass, freezer, 1, hive_c=35.0)  # 13:02, the 12:00 hour is complete
+    await _run_due_timers(hass)
+    completed_hour = hass_storage[storage_key]["data"][0]
+    assert completed_hour["hour"] == datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp()
+    assert completed_hour["hive_count"] == 11  # 12:07 to 12:57
+    assert completed_hour["outdoor_count"] == 12  # 12:02 to 12:57

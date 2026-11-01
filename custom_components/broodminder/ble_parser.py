@@ -189,8 +189,14 @@ def _get_device_id_from_mac_address(mac_address: str) -> str:
     return ":".join(parts[-3:])
 
 
-def _get_model_name_from_model_id(model_id: int) -> str:
+def model_name(model_id: int) -> str:
+    """Return the name of a BroodMinder model id, or Unknown."""
     return ID_TO_MODEL.get(model_id, "Unknown")
+
+
+def device_name(address: str, model_id: int) -> str:
+    """Return the device name: the model name and the last three octets of the address."""
+    return f"{MANUFACTURER}-{model_name(model_id)} {_get_device_id_from_mac_address(address)}"
 
 
 def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> ManufacturerData | None:
@@ -204,10 +210,6 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         return None
 
     model = payload[IDX_MODEL]
-    model_name = _get_model_name_from_model_id(model)
-
-    device_id = _get_device_id_from_mac_address(address)
-    device_name = f"{MANUFACTURER}-{model_name} {device_id}"
 
     ver_minor = payload[IDX_VER_MINOR] if len(payload) > IDX_VER_MINOR else 0
     ver_major = payload[IDX_VER_MAJOR] if len(payload) > IDX_VER_MAJOR else 0
@@ -264,12 +266,12 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     return ManufacturerData(
         address=address,
         model=model,
-        model_name=model_name,
+        model_name=model_name(model),
         firmware=fw,
         temperature_c=temp_c,
         humidity_percent=humidity,
         battery_percent=battery,
-        device_name=device_name,
+        device_name=device_name(address, model),
         device_id=address,
         elapsed_s=elapsed_s,
         temperature_rt_c=temperature_rt_c,

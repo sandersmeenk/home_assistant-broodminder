@@ -5,5 +5,39 @@
       "already_configured": "Device is already configured.",
       "not_broodminder": "Not a BroodMinder device."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Brood estimate",
+        "description": "The brood estimate compares the hive temperature with the outdoor temperature.",
+        "data": {
+          "sensor_position": "Sensor position",
+          "outdoor_entity": "Outdoor temperature"
+        },
+        "data_description": {
+          "sensor_position": "Where the BroodMinder sits in the hive. In the comb it reads about 35 °C whenever brood surrounds it, so the estimate shows whether the brood nest reaches the sensor rather than how big it is.",
+          "outdoor_entity": "A temperature sensor or weather entity near the hive. Leave empty to use Home Assistant's weather: Met.no's Forecast Home, or else your only weather entity."
+        }
+      }
+    }
+  },
+  "selector": {
+    "sensor_position": {
+      "options": {
+        "top_of_frames": "On top of the frames (BroodMinder's standard placement)",
+        "in_comb": "In the comb, between frames at brood height"
+      }
+    }
+  },
+  "issues": {
+    "no_weather_entity": {
+      "title": "BroodMinder brood estimate has no outdoor temperature",
+      "description": "The brood estimate needs the outdoor temperature, but Home Assistant has no weather entity to use. Brood sensors show unknown until this is fixed.\n\nTo fix this, do one of the following:\n- Set your home location under **Settings** > **System** > **General**, and add the **Meteorologisk institutt (Met.no)** integration.\n- Choose an outdoor temperature sensor or weather entity in the settings of each BroodMinder hive: **Settings** > **Devices & services** > **BroodMinder** > **Configure**.\n\nIf you have several weather entities and none is Met.no's Forecast Home, choose one in the hive settings."
+    },
+    "outdoor_temperature_unavailable": {
+      "title": "Outdoor temperature for {hive} is unavailable",
+      "description": "The brood estimate of {hive} uses `{entity_id}` as outdoor temperature, but it has had no temperature for more than 3 hours. The brood sensor shows unknown once there are too few hours with an outdoor temperature.\n\nCheck that `{entity_id}` works, or choose another outdoor temperature in the hive's settings: **Settings** > **Devices & services** > **BroodMinder** > **Configure**."
+    }
   }
 }

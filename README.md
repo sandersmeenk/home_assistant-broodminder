@@ -75,6 +75,7 @@ BroodMinder model number.
 | Sensor          | T (41) | T (47) | TH (42) | TH (56) | W (43) | W (57) | W3/W4 (49) | DIY (58) | SubHub (52) | Hub 4G (54), Hub Wifi (60), BeeDar (63), other |
 |-----------------|:------:|:------:|:-------:|:-------:|:------:|:------:|:----------:|:--------:|:-----------:|:----------------------------------------------:|
 | Battery         | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Brood           | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
 | Humidity        |        |        | ✓       | ✓       | ✓      | ✓      |            | ✓        |             | ✓                                              |
 | Temperature     | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
 | Realtime Temp   |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
@@ -111,6 +112,10 @@ The BroodMinder integration provides the following sensor entities:
   The `voltage_based` and `charge_remaining` attributes show the last reading of each kind;
   `charge_remaining` stays empty on older firmware. Home Assistant remembers both across a
   restart.
+
+* **Brood**  
+  An estimate from 0 to 100% of the brood near the sensor, from the hive temperature and the
+  outdoor temperature. See [Brood estimate](#brood-estimate).
 
 * **Humidity**  
   This provides the measured humidity of the BroodMinder in percentage from 0 to 100%.
@@ -158,6 +163,78 @@ The BroodMinder integration provides the following sensor entities:
   The total weight of the hive in kilograms, as sent by the scale.
   The original BroodMinder-W (model `43`) weighs one side of the hive and doesn't send a total,
   so for this scale it is calculated as 2 × (weight left + weight right).
+
+
+## Brood estimate
+
+BroodMinder-T and -TH hives get a **Brood** sensor: an estimate from 0 to 100% of the brood the
+colony raises near the sensor, like the brood level in BroodMinder's Bees app. It needs no scale:
+it compares the hive temperature with the outdoor temperature.
+
+### How it works
+
+A colony with brood keeps the brood nest at about 35 °C, whatever the weather. Without brood, the
+hive temperature follows the weather. Every hour, the integration scores how far the colony keeps
+the hive above what the outdoor temperature alone would give, towards 35 °C. The day's score is
+lowered when the hive temperature swings along with the outdoor temperature.
+
+The estimate covers the last 24 hours and is updated every hour. It needs at least 18 hours with
+both temperatures, so a new hive shows *unknown* for most of its first day. The hours are stored,
+so a restart of Home Assistant doesn't start the count over.
+
+Like BroodMinder's own brood level, the percentage is relative. Compare hives with each other and
+over time, and learn what it means for your hives, for example "80% is usually 6 frames of
+brood". Below about 20% it's rough, because the brood can be far from the sensor.
+
+The formulas, settings and design decisions are described in detail in
+[BROOD_ESTIMATE.md](BROOD_ESTIMATE.md).
+
+### Settings
+
+Each T and TH hive has its own settings: go to **Settings** > **Devices & services** >
+**BroodMinder** and select **Configure** on the hive.
+
+* **Sensor position**
+  * *On top of the frames* (default): BroodMinder's standard placement, on the top bars near the
+    middle of the brood box. The temperature there drops off gradually as the brood nest shrinks
+    or moves away, so the estimate rises and falls with the amount of brood.
+  * *In the comb, between frames at brood height*: in the comb, the sensor reads about 35 °C
+    whenever brood surrounds it, however big the brood nest is. The estimate then shows whether
+    the brood nest reaches the sensor: high for most of the season, and dropping during a brood
+    break, after losing the queen, or when the brood nest shrinks in autumn.
+* **Outdoor temperature**  
+  A temperature sensor or weather entity. Leave it empty to use Home Assistant's weather: the
+  Met.no *Forecast Home* weather entity that Home Assistant creates during setup, or else your
+  only weather entity.
+
+### Outdoor temperature from Home Assistant's weather
+
+* Set your home location and elevation under **Settings** > **System** > **General**. Met.no
+  uses both, and without the elevation its temperature can be off in hilly areas.
+* The weather is for your home location. For hives somewhere else, choose a temperature sensor
+  near them in the hive's settings.
+
+When there's no outdoor temperature, Home Assistant shows a repair under **Settings** >
+**System** > **Repairs**:
+
+* *BroodMinder brood estimate has no outdoor temperature*: there's no Met.no *Forecast Home*
+  entity, and not exactly one other weather entity. Add the Met.no integration, or choose an
+  outdoor temperature in the hive's settings.
+* *Outdoor temperature for (hive) is unavailable*: the outdoor temperature has had no value for
+  more than 3 hours.
+
+### Brood sensor attributes
+
+* `status`: `ok`, or why the sensor shows *unknown*:
+  * `not_enough_data`: fewer than 18 of the last 24 hours have both temperatures.
+  * `no_outdoor_temperature`: there's no outdoor temperature, see above.
+  * `too_hot`: it was so warm outdoors that 35 °C in the hive says nothing about brood. In
+    climates that stay at about 31 °C or warmer day and night, the sensor often shows *unknown*.
+* `level`: the average hourly score, from 0 to 1.
+* `stability`: from 0 to 1, where 1 means the hive stays steady while the weather swings.
+* `hours_used`: the number of hours in the estimate.
+* `outdoor_entity`: the outdoor temperature in use.
+* `sensor_position`: the sensor position from the settings.
 
 
 ## Installation and setup
