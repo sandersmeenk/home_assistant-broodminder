@@ -56,6 +56,7 @@ from .const import (
     SENSOR_WEIGHT_REALTIME,
     SPECIAL_TEMP_MODELS_F,
     SWARM_TIME_MIN_VALID_UNIX,
+    TEMP_RAW_INVALID,
     WEIGHT_RAW_NO_READING,
     WEIGHT_RAW_NOT_CONNECTED,
 )
@@ -88,9 +89,27 @@ class ManufacturerData:
     swarm_time_supported: bool = False
 
 
-def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
-    raw = lo | (hi << 8)
-    if raw in (0xFFFF,):  # invalid
+def _u8(payload: bytes, idx: int) -> int | None:
+    """Return the byte at idx, or None if the payload is too short."""
+    return payload[idx] if len(payload) > idx else None
+
+
+def _u16(payload: bytes, lo: int, hi: int) -> int | None:
+    """Return the little-endian 16-bit value of bytes lo and hi, or None if too short."""
+    if len(payload) <= max(lo, hi):
+        return None
+    return payload[lo] | (payload[hi] << 8)
+
+
+def _u32(payload: bytes, start: int) -> int | None:
+    """Return the little-endian 32-bit value of four bytes from start, or None if too short."""
+    if len(payload) < start + 4:
+        return None
+    return int.from_bytes(payload[start : start + 4], "little")
+
+
+def _parse_temperature_c(model: int, raw: int | None) -> float | None:
+    if raw is None or raw == TEMP_RAW_INVALID:
         return None
 
     if model in SPECIAL_TEMP_MODELS_F:
@@ -101,16 +120,16 @@ def _parse_temperature_c(model: int, lo: int, hi: int) -> float | None:
     return (raw - 5000) / 100.0
 
 
-def _parse_battery(raw: int) -> int | None:
+def _parse_battery(raw: int | None) -> int | None:
     # Clamp to HA's 0..100 expectation; some frames can exceed 100.
-    if raw < 0:
+    if raw is None or raw < 0:
         return None
 
     return min(SENSOR_PERCENTAGE_MAXIMUM, max(SENSOR_PERCENTAGE_MINIMUM, raw))
 
 
-def _parse_humidity(model: int, raw: int) -> int | None:
-    if model in NO_HUMIDITY_MODELS:
+def _parse_humidity(model: int, raw: int | None) -> int | None:
+    if model in NO_HUMIDITY_MODELS or raw is None:
         return None
 
     if not (SENSOR_PERCENTAGE_MINIMUM <= raw <= SENSOR_PERCENTAGE_MAXIMUM):
@@ -119,13 +138,10 @@ def _parse_humidity(model: int, raw: int) -> int | None:
     return raw
 
 
-def _parse_weight_kg(
-    model: int, lo: int, hi: int, *, extra_channel: bool = False
-) -> float | None:
-    if model not in SCALE_MODELS:
+def _parse_weight_kg(model: int, raw: int | None, *, extra_channel: bool = False) -> float | None:
+    if model not in SCALE_MODELS or raw is None:
         return None
 
-    raw = lo | (hi << 8)
     if raw == WEIGHT_RAW_NO_READING:
         return None
     if extra_channel and raw == WEIGHT_RAW_NOT_CONNECTED:
@@ -135,23 +151,22 @@ def _parse_weight_kg(
     return (raw - 32767) / 100.0
 
 
-def _parse_swarm_time(model: int, t1: int, t2: int, t3: int, t4: int) -> datetime | None:
-    """Convert four bytes to a UTC datetime for T/TH models (per docs)."""
-    if model in MODEL_T or model in MODEL_TH:
-        swarm_time_unix = t1 | (t2 << 8) | (t3 << 16) | (t4 << 24)
-        if swarm_time_unix < SWARM_TIME_MIN_VALID_UNIX:
+def _parse_swarm_time(model: int, raw: int | None) -> datetime | None:
+    """Convert the 32-bit swarm time to a UTC datetime for T/TH models (per docs)."""
+    if (model in MODEL_T or model in MODEL_TH) and raw is not None:
+        if raw < SWARM_TIME_MIN_VALID_UNIX:
             return None
         try:
-            return datetime.fromtimestamp(swarm_time_unix, tz=UTC)
+            return datetime.fromtimestamp(raw, tz=UTC)
         except (OverflowError, OSError, ValueError):
             return None
 
     return None
 
 
-def _parse_swarm_state(model: int, ss: int) -> int | None:
+def _parse_swarm_state(model: int, raw: int | None) -> int | None:
     if model in MODEL_T or model in MODEL_TH:
-        return ss
+        return raw
 
     return None
 
@@ -176,80 +191,47 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         return None
 
     model = payload[IDX_MODEL]
+    model_name = _get_model_name_from_model_id(model)
+
+    device_id = _get_device_id_from_mac_address(address)
+    device_name = f"{MANUFACTURER}-{model_name} {device_id}"
+
     ver_minor = payload[IDX_VER_MINOR] if len(payload) > IDX_VER_MINOR else 0
     ver_major = payload[IDX_VER_MAJOR] if len(payload) > IDX_VER_MAJOR else 0
     fw = f"{ver_major}.{ver_minor}"
 
-    # Battery
-    battery = None
-    if len(payload) > IDX_BATTERY:
-        battery = _parse_battery(payload[IDX_BATTERY])
+    battery = _parse_battery(_u8(payload, IDX_BATTERY))
+    temp_c = _parse_temperature_c(model, _u16(payload, IDX_TEMP_L, IDX_TEMP_H))
+    humidity = _parse_humidity(model, _u8(payload, IDX_HUMIDITY))
+    elapsed_s = _u16(payload, IDX_ELAPSED_L, IDX_ELAPSED_H)
 
-    # Main temperature
-    temp_c = None
-    if len(payload) > IDX_TEMP_H:
-        temp_c = _parse_temperature_c(model, payload[IDX_TEMP_L], payload[IDX_TEMP_H])
-
-    # Humidity
-    humidity = None
-    if len(payload) > IDX_HUMIDITY:
-        humidity = _parse_humidity(model, payload[IDX_HUMIDITY])
-
-    # Elapsed seconds
-    elapsed_s = None
-    if len(payload) > IDX_ELAPSED_H:
-        elapsed_s = payload[IDX_ELAPSED_L] | (payload[IDX_ELAPSED_H] << 8)
-
-    # Realtime temperature
+    # Realtime temperature (LSB and MSB are not adjacent)
     temperature_rt_c = None
-    if model in REALTIME_MODELS and len(payload) > IDX_RT_TEMP2_L:
+    if model in REALTIME_MODELS:
         temperature_rt_c = _parse_temperature_c(
-            model, payload[IDX_RT_TEMP1_L], payload[IDX_RT_TEMP2_L]
+            model, _u16(payload, IDX_RT_TEMP1_L, IDX_RT_TEMP2_L)
         )
 
-    # Weights
-    weight_l_kg = None
-    weight_r_kg = None
-    if len(payload) > IDX_WEIGHT_R_H:
-        weight_l_kg = _parse_weight_kg(model, payload[IDX_WEIGHT_L_L], payload[IDX_WEIGHT_L_H])
-        weight_r_kg = _parse_weight_kg(model, payload[IDX_WEIGHT_R_L], payload[IDX_WEIGHT_R_H])
+    weight_l_kg = _parse_weight_kg(model, _u16(payload, IDX_WEIGHT_L_L, IDX_WEIGHT_L_H))
+    weight_r_kg = _parse_weight_kg(model, _u16(payload, IDX_WEIGHT_R_L, IDX_WEIGHT_R_H))
 
-    # Extra channels or SM time
+    # Extra weight channels share their bytes with the swarm time below
     weight_l2_kg = None
     weight_r2_kg = None
-    swarm_time_dt = None
-    swarm_time_supported = False
-
-    if len(payload) > IDX_WR2_SM3:
-        swarm_time_supported = model in MODEL_T or model in MODEL_TH
-        # Expose as swarm time for models where these are swarm time
-        swarm_time_dt = _parse_swarm_time(
-            model,
-            payload[IDX_WL2_SM0],
-            payload[IDX_WL2_SM1],
-            payload[IDX_WR2_SM2],
-            payload[IDX_WR2_SM3],
+    if model in EXTRA_WEIGHT_MODELS:
+        weight_l2_kg = _parse_weight_kg(
+            model, _u16(payload, IDX_WL2_SM0, IDX_WL2_SM1), extra_channel=True
+        )
+        weight_r2_kg = _parse_weight_kg(
+            model, _u16(payload, IDX_WR2_SM2, IDX_WR2_SM3), extra_channel=True
         )
 
-        # Expose as weights for models where these are extra weight channels
-        if model in EXTRA_WEIGHT_MODELS:
-            weight_l2_kg = _parse_weight_kg(
-                model, payload[IDX_WL2_SM0], payload[IDX_WL2_SM1], extra_channel=True
-            )
-            weight_r2_kg = _parse_weight_kg(
-                model, payload[IDX_WR2_SM2], payload[IDX_WR2_SM3], extra_channel=True
-            )
-
-    # Realtime total or swarm state
+    # Realtime total shares its low byte with the swarm state below
     weight_realtime_total_kg = None
-    swarm_state = None
-
-    if len(payload) > IDX_RT_TOTAL_H:
-        swarm_state = _parse_swarm_state(model, payload[IDX_RT_TOTAL_L_OR_SWARM_STATE])
-        if model in REALTIME_MODELS:
-            weight_realtime_total_kg = _parse_weight_kg(
-                model, payload[IDX_RT_TOTAL_L_OR_SWARM_STATE], payload[IDX_RT_TOTAL_H]
-            )
+    if model in REALTIME_MODELS:
+        weight_realtime_total_kg = _parse_weight_kg(
+            model, _u16(payload, IDX_RT_TOTAL_L_OR_SWARM_STATE, IDX_RT_TOTAL_H)
+        )
 
     # Models without a realtime total: calculate it from the left and right weights
     if (
@@ -259,10 +241,11 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     ):
         weight_realtime_total_kg = round(HALF_HIVE_WEIGHT_FACTOR * (weight_l_kg + weight_r_kg), 2)
 
-    # Device label
-    model_name = _get_model_name_from_model_id(model)
-    device_id = _get_device_id_from_mac_address(address)
-    device_name = f"{MANUFACTURER}-{model_name} {device_id}"
+    # SwarmMinder (T/TH models): swarm time and state, in the extra and realtime weight bytes
+    swarm_time_raw = _u32(payload, IDX_WL2_SM0)
+    swarm_time_supported = swarm_time_raw is not None and (model in MODEL_T or model in MODEL_TH)
+    swarm_time_dt = _parse_swarm_time(model, swarm_time_raw)
+    swarm_state = _parse_swarm_state(model, _u8(payload, IDX_RT_TOTAL_L_OR_SWARM_STATE))
 
     return ManufacturerData(
         address=address,

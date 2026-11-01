@@ -116,9 +116,13 @@ def swarm_state_description(swarm_state: int) -> str:
 
 
 def sensor_update_to_bluetooth_data_update(
-    parsed: ManufacturerData,
+    parsed: ManufacturerData | None,
 ) -> PassiveBluetoothDataUpdate[Any]:
     """Build a PassiveBluetoothDataUpdate for the processor."""
+    if parsed is None:
+        # Advertisement without readable BroodMinder data: keep the last values
+        return PassiveBluetoothDataUpdate()
+
     entities = extract_entities(parsed)
     device = DeviceInfo(
         identifiers={(DOMAIN, parsed.device_id)},

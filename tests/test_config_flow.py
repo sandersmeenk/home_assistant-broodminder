@@ -396,3 +396,27 @@ async def test_GIVEN_swarm_state_WHEN_advertising_THEN_state_is_code_with_descri
     assert state is not None
     assert state.state == "29"
     assert state.attributes["description"] == "Swarm event detected"
+
+
+async def test_GIVEN_th_sensor_WHEN_too_short_advertisement_arrives_THEN_sensors_keep_values(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Verifies an advertisement too short to parse is ignored without errors."""
+
+    await _setup_device(hass, TH_ADDRESS, _th_payload())
+    temperature = "sensor.broodminder_th_00_00_01_temperature"
+    assert hass.states.get(temperature).state == "25.0"
+
+    short_payload = bytes(
+        [
+            56,  # [0] model TH
+            2,  # [1] v.minor
+            1,  # [2] v.major
+            0,  # [3] realtime temperature LSB; battery at [4] is missing
+        ]
+    )
+    _inject(hass, TH_ADDRESS, short_payload)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert hass.states.get(temperature).state == "25.0"
+    assert "Unexpected error" not in caplog.text

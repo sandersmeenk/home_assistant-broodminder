@@ -70,6 +70,9 @@ EXTRA_WEIGHT_MODELS = {49, 57, 58}
 CALCULATED_TOTAL_WEIGHT_MODELS = {43}
 HALF_HIVE_WEIGHT_FACTOR = 2
 
+# Raw temperature value without a reading
+TEMP_RAW_INVALID = 0xFFFF
+
 # Raw weight values without a reading
 WEIGHT_RAW_NO_READING = 0xFFFF
 # Raw 0x7FFF is 0.00 kg, but on an extra weight channel it means no load cell is connected
