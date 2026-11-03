@@ -157,8 +157,6 @@ BROOD_TEMP_C = 35.0  # temperature the colony keeps the brood nest at
 BROOD_EDGE_TEMP_C: dict[str, float] = {POSITION_TOP_OF_FRAMES: 30.0, POSITION_IN_COMB: 32.0}
 # How much warmer than outdoors the colony keeps the hive without raising brood
 COLONY_WARMING_C = 4.0
-# An hour counts fully when its reference is at least this far below brood temperature
-FULL_WEIGHT_SPAN_C = 5.0
 # A hive swinging at most this share of the outdoor swing counts as fully stable
 STABLE_SWING_RATIO = 0.2
 # On days with a smaller outdoor swing (overcast), stability tells nothing and is skipped
