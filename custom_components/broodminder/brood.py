@@ -20,7 +20,6 @@ from .const import (
     BROOD_TEMP_C,
     BROOD_WINDOW_HOURS,
     COLONY_WARMING_C,
-    FULL_WEIGHT_SPAN_C,
     MIN_OUTDOOR_SWING_C,
     STABLE_SWING_RATIO,
 )
@@ -123,9 +122,9 @@ def _level(hours: list[tuple[float, float]], edge_c: float) -> float | None:
         span_c = BROOD_TEMP_C - reference_c
         if span_c <= 0:
             continue  # so hot outdoors that brood temperature says nothing
-        weight = _clamp(span_c / FULL_WEIGHT_SPAN_C)
-        weighted_score += weight * _clamp((hive_c - reference_c) / span_c)
-        total_weight += weight
+        # Warm hours count less: the less room the weather leaves, the less the hour says
+        weighted_score += span_c * _clamp((hive_c - reference_c) / span_c)
+        total_weight += span_c
 
     return weighted_score / total_weight if total_weight else None
 

@@ -125,6 +125,18 @@ def test_GIVEN_steady_day_WHEN_estimate_THEN_level_is_share_of_way_to_brood_temp
     assert estimate.stability == 1.0  # no outdoor swing: stability is skipped
 
 
+def test_GIVEN_cool_and_warm_hours_WHEN_estimate_THEN_hours_weigh_by_their_span() -> None:
+    """Verifies a warm hour counts less: by its span, the room left below 35 °C."""
+    # 20 °C outdoors: reference 30 °C, span 5, hive at 35 °C scores 1
+    # 30 °C outdoors: reference 34 °C, span 1, hive at 34 °C scores 0
+    hours = [(35.0, 20.0)] * 12 + [(34.0, 30.0)] * 12
+
+    estimate = estimate_brood(hours, POSITION_TOP_OF_FRAMES)
+
+    assert estimate.level == pytest.approx((5 * 1 + 1 * 0) / (5 + 1))
+    assert estimate.stability == 1.0  # hive swing 1 °C is a tenth of the outdoor 10 °C
+
+
 def test_GIVEN_hive_swinging_half_of_outdoors_WHEN_estimate_THEN_stability_reduced() -> None:
     """Verifies stability: half the outdoor swing is (1 - 0.5) / (1 - 0.2) = 0.625."""
     hours = _day(10, 20, lambda o, _: 25 + 0.5 * (o - 15))

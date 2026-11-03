@@ -133,6 +133,8 @@ Each requirement has an ID for traceability to the [verification](#14-verificati
 | D14 | The Brood sensor stays available when the hive is out of range | It is an estimate over the last 24 hours, not a live reading; hours without hive data simply drop out of the window. | Follow the hive's availability. |
 | D15 | Also store the hours at Home Assistant's final write | Home Assistant doesn't unload config entries when it stops, so without this a clean restart lost the samples of the hour in progress since its first save. | Rely on a pending delayed save: the hourly save runs at once, so none is pending at shutdown. |
 | D16 | Estimate from the stored hours as soon as the hive is set up | The first sample waits until Home Assistant has started (D12). Without this, every restart showed unknown with `no_outdoor_temperature` until then, a false gap in history and statistics. | Wait for the first sample. |
+| D17 | The hourly weight is the span, without a constant | The first version used `clamp(span / FULL_WEIGHT_SPAN_C)` with 5 °C. The span is never more than `35 − T_edge` (5 °C on top of the frames, 3 °C in the comb), so the clamp never applied and the weight was always `span / 5`. Since only the ratio between weights matters, the constant had no effect at 5 °C or above, yet was listed as one to tune. Removing it gives identical results. | Keep the constant and document that only values below 3 to 5 °C have an effect. |
+| D18 | Stability uses all hours in the window, also those the level skips as too hot | Stability needs the full day-night cycle to see whether the hive follows the weather. Without the hot afternoon hours the outdoor swing shrinks (17.4 to 11.1 °C on a day from 18 to 36 °C) and on mild days could drop below `MIN_OUTDOOR_SWING_C`, so stability would no longer be judged. The cost: a hive with brood that overheats in a heatwave is marked down for hours the level ignores (see [15](#15-known-limitations)). | Use only the hours the level uses. |
 
 ## 5. Data collection
 
@@ -192,7 +194,6 @@ changes once an hour, when an hour completes. The window has at most 24 hours (`
 | `T_brood` | `BROOD_TEMP_C` | 35.0 °C | Temperature the colony keeps the brood nest at |
 | `T_edge` | `BROOD_EDGE_TEMP_C` | 30.0 °C on top of the frames, 32.0 °C in the comb | Below this an hour counts as no brood |
 | `ΔT_colony` | `COLONY_WARMING_C` | 4.0 °C | How much warmer than outdoors a colony keeps the hive without raising brood |
-| `span_full` | `FULL_WEIGHT_SPAN_C` | 5.0 °C | An hour counts fully when its reference is at least this far below `T_brood` |
 | `r_stable` | `STABLE_SWING_RATIO` | 0.2 | A hive swinging at most this share of the outdoor swing counts as fully stable |
 | `swing_min` | `MIN_OUTDOOR_SWING_C` | 3.0 °C | Below this outdoor swing (overcast day) stability is not judged |
 | `n_min` | `BROOD_MIN_HOURS` | 18 | Hours in the window needed for an estimate |
@@ -223,7 +224,7 @@ If `span_h ≤ 0`, the hour is skipped: it was so warm outdoors (`T_out,h ≥ 31
 temperature in the hive says nothing. Otherwise:
 
 ```
-w_h = clamp(span_h / span_full)                   weight: warm hours count less
+w_h = span_h                                      weight: warm hours count less
 s_h = clamp((T_in,h − T_ref,h) / span_h)          score: share of the way to 35 °C
 ```
 
@@ -231,6 +232,12 @@ The reference is never below `T_edge`. That keeps a warm broodless winter cluste
 20 °C with −2 °C outdoors) from scoring: a hive temperature below the edge of the brood range
 is no brood near the sensor, however far above outdoors it is. The position setting only
 changes `T_edge`.
+
+The weight is the span itself (D17): an hour counts in proportion to the room the weather leaves
+below 35 °C. Only the ratio between hours matters, because the level divides by the sum of the
+weights. Up to `T_out,h = T_edge − ΔT_colony` (26 °C on top of the frames, 28 °C in the comb)
+the reference is `T_edge`, so every such hour has the same weight; above it the weight falls to 0
+at 31 °C. On a day that stays below that temperature the level is the plain mean of the scores.
 
 ### 6.4 Level
 
@@ -256,6 +263,11 @@ else:
 
 A hive swinging at most 20% of the outdoor swing gets `S = 1`; a hive swinging as much as
 outdoors gets `S = 0`.
+
+Both swings are taken over all hours in the window, including the hours the level skips because
+they were too hot ([6.3](#63-hourly-score)) (D18). While the hive behaves the same in hot and cool
+hours, this gives the same `S` as the cool hours alone: for a day from 18 to 36 °C outdoors with
+9 hours too hot, a hive following half the outdoor swing gets `S = 0.62` either way.
 
 ### 6.6 Result
 
@@ -489,7 +501,7 @@ Plan:
 2. Export the hive and outdoor temperature history from Home Assistant (History > download data).
 3. Replay the export through `estimate_brood()` and compare with the inspection notes.
 4. Tune, in order of expected impact: `COLONY_WARMING_C`, `BROOD_EDGE_TEMP_C`,
-   `STABLE_SWING_RATIO`, `FULL_WEIGHT_SPAN_C`, `MIN_OUTDOOR_SWING_C`. Update the reference table
+   `STABLE_SWING_RATIO`, `MIN_OUTDOOR_SWING_C`. Update the reference table
    in [6.8](#68-reference-values) and keep the range tests passing.
 
 In temperate climates the low end (broodless, about 0%) can be checked in winter; the high end
@@ -504,7 +516,7 @@ Run with `scripts/test`; `scripts/lint` must be clean.
 | Requirement | Tests |
 |---|---|
 | R1 | `test_GIVEN_t_and_scale_WHEN_discovered_THEN_only_t_gets_brood_sensor_and_settings`, `test_GIVEN_only_a_scale_WHEN_no_weather_entity_THEN_no_repair` |
-| R2, R11, algorithm ([6](#6-algorithm)) | `test_GIVEN_day_on_top_of_frames_WHEN_estimate_THEN_brood_in_expected_range`, `test_GIVEN_brood_around_comb_sensor_WHEN_estimate_THEN_brood_high`, `test_GIVEN_brood_break_at_comb_sensor_WHEN_estimate_THEN_in_comb_reads_low`, `test_GIVEN_steady_day_WHEN_estimate_THEN_level_is_share_of_way_to_brood_temperature`, `test_GIVEN_hive_swinging_half_of_outdoors_WHEN_estimate_THEN_stability_reduced`, `test_GIVEN_every_hour_too_hot_WHEN_estimate_THEN_too_hot` |
+| R2, R11, algorithm ([6](#6-algorithm)) | `test_GIVEN_day_on_top_of_frames_WHEN_estimate_THEN_brood_in_expected_range`, `test_GIVEN_brood_around_comb_sensor_WHEN_estimate_THEN_brood_high`, `test_GIVEN_brood_break_at_comb_sensor_WHEN_estimate_THEN_in_comb_reads_low`, `test_GIVEN_steady_day_WHEN_estimate_THEN_level_is_share_of_way_to_brood_temperature`, `test_GIVEN_cool_and_warm_hours_WHEN_estimate_THEN_hours_weigh_by_their_span`, `test_GIVEN_hive_swinging_half_of_outdoors_WHEN_estimate_THEN_stability_reduced`, `test_GIVEN_every_hour_too_hot_WHEN_estimate_THEN_too_hot` |
 | R3, R4 | `test_GIVEN_stored_hours_WHEN_brood_window_THEN_last_24_complete_hours_with_both`, `test_GIVEN_too_few_hours_WHEN_estimate_THEN_not_enough_data`, `test_GIVEN_samples_WHEN_added_to_hour_THEN_means_skip_missing_temperatures`, `test_GIVEN_timestamp_WHEN_hour_start_THEN_rounded_down_to_hour`, `test_GIVEN_hive_held_at_35_WHEN_hours_pass_THEN_brood_estimated_and_kept_on_reload` |
 | R5, R9 | `test_GIVEN_no_weather_entity_WHEN_hive_set_up_THEN_brood_unknown_and_repair_raised`, `test_GIVEN_no_weather_repair_WHEN_hive_unloaded_THEN_repair_gone`, `test_GIVEN_outdoor_sensor_unavailable_WHEN_3_hours_pass_THEN_repair_until_back` |
 | R6, R11 settings | `test_GIVEN_hive_WHEN_brood_settings_saved_THEN_hive_reloads_with_them` |
@@ -543,8 +555,11 @@ range:
 - The sensor measures one point; the percentage is relative, not frames of brood, and below
   about 20% it is rough.
 - In the comb, the estimate shows whether the brood nest reaches the sensor, not how big it is.
-- Hours with an outdoor temperature of 31 °C or more are ignored. In climates that stay that warm
-  day and night, the sensor often shows unknown.
+- Hours with an outdoor temperature of 31 °C or more don't count towards the level. In climates
+  that stay that warm day and night, the sensor often shows unknown.
+- Those hot hours do count towards stability (D18). When a colony with brood can't cool the hive
+  in a heatwave and the hive temperature climbs above 35 °C in the afternoon, stability counts
+  that as following the weather, so a strong colony can lose some percentage points on such days.
 - The estimate lags up to an hour, because only complete hours are used.
 - A new hive, or one whose history was lost, needs about 18 hours before the first value.
 - The automatic outdoor temperature is a forecast for the home location; accuracy depends on the
