@@ -131,6 +131,8 @@ Each requirement has an ID for traceability to the [verification](#14-verificati
 | D12 | The shared repair waits until Home Assistant is fully started (`CoreState.running`) | Other integrations' weather entities may not exist during startup; avoids a false repair at every restart. `hass.is_running` is not enough: it is also true while starting. | Raise at once at setup. |
 | D13 | Hive input is the *Temperature* field, not *Realtime Temp* | Temperature is sent by all T and TH models; Realtime Temp only by models 47 and 56. Hourly averaging makes the difference irrelevant. | Realtime Temp where available. |
 | D14 | The Brood sensor stays available when the hive is out of range | It is an estimate over the last 24 hours, not a live reading; hours without hive data simply drop out of the window. | Follow the hive's availability. |
+| D15 | Also store the hours at Home Assistant's final write | Home Assistant doesn't unload config entries when it stops, so without this a clean restart lost the samples of the hour in progress since its first save. | Rely on a pending delayed save: the hourly save runs at once, so none is pending at shutdown. |
+| D16 | Estimate from the stored hours as soon as the hive is set up | The first sample waits until Home Assistant has started (D12). Without this, every restart showed unknown with `no_outdoor_temperature` until then, a false gap in history and statistics. | Wait for the first sample. |
 
 ## 5. Data collection
 
@@ -152,6 +154,9 @@ sample:
 
 The hive temperature is updated on every parsed advertisement; an advertisement without a valid
 temperature sets it to none.
+
+When the hive is set up, the estimate is computed once from the stored buckets, before the first
+sample (D16).
 
 ### 5.2 Hourly buckets
 
@@ -388,8 +393,9 @@ Attributes:
 | `sensor_position` | `top_of_frames` or `in_comb` |
 
 Status precedence: if there is no estimate **and** the latest sample had no outdoor temperature,
-`no_outdoor_temperature`; otherwise the algorithm's status. An estimate still based on enough
-past hours stays `ok` during a short outdoor outage.
+`no_outdoor_temperature`; otherwise the algorithm's status. Before the first sample there is no
+latest sample, so the algorithm's status is shown. An estimate still based on enough past hours
+stays `ok` during a short outdoor outage.
 
 ## 10. Repairs and logging
 
@@ -432,10 +438,10 @@ holds. Each logs one warning when it is raised. The texts are in
 | Location | `.storage/broodminder.brood.<config entry id>`, one file per hive |
 | Format | Home Assistant `Store`, version 1: a list of buckets ([5.2](#52-hourly-buckets)) sorted by hour, JSON indented by 2 |
 | Size | about 8.3 KB at most (48 hours plus the current one); it doesn't grow |
-| Written | when a sample starts a new hour; when the hive unloads (reload, settings change, removal); at Home Assistant's final write if a save is pending |
+| Written | when a sample starts a new hour; when the hive unloads (reload, settings change, removal); at Home Assistant's final write when it stops (D15) |
 | Read | when the hive is set up |
 | Deleted | when the hive is removed |
-| Write volume | about 24 writes a day per hive, about 200 KB a day or 6 MB a month |
+| Write volume | about 24 writes a day per hive, plus one per restart; about 200 KB a day or 6 MB a month |
 
 The 5-minute samples are never written individually, only the hourly sums.
 
@@ -462,12 +468,12 @@ About 15 KB per hive for the buckets (measured), constant over time.
 | Event | Behaviour |
 |---|---|
 | Discovery of a new device | Entry created with `model`. For T/TH: tracker started, Brood sensor created right away (unknown, `not_enough_data` or `no_outdoor_temperature`). |
-| Setup of an existing T/TH entry | Stored buckets loaded; first sample when Home Assistant has started, or right away if it is running; the estimate is available immediately if the stored hours suffice. |
+| Setup of an existing T/TH entry | Stored buckets loaded and the estimate computed from them, so it is available immediately if the stored hours suffice, also while Home Assistant is starting; first sample when Home Assistant has started, or right away if it is running. |
 | Entry without `model` (created before 0.5.0) | No Brood sensor and no settings at first. The first parsed advertisement stores the model; for T/TH the hive reloads once and gets them. |
 | Settings saved with changes | Hive reloads with the new settings; buckets kept. Saving without changes doesn't reload. |
 | Unload | Sampling stops, buckets saved, the hive's unavailable repair withdrawn, the shared repair re-evaluated. |
 | Removal | Unload, then the history file is deleted. |
-| Home Assistant restart | Pending save written at shutdown; repairs not kept; the per-hive repair can only reappear after 3 hours. |
+| Home Assistant restart | All buckets, including the hour in progress, written at the final write; repairs not kept; the per-hive repair can only reappear after 3 hours. |
 | Crash or power loss | At most the hour in progress is lost. |
 
 ## 13. Calibration
@@ -505,7 +511,8 @@ Run with `scripts/test`; `scripts/lint` must be clean.
 | R7 | `test_GIVEN_met_home_and_other_weather_WHEN_hive_set_up_THEN_met_home_used`, `test_GIVEN_several_weather_entities_without_met_home_WHEN_set_up_THEN_repair_raised` |
 | R8 | `test_GIVEN_no_weather_repair_WHEN_weather_entity_added_THEN_used_and_repair_gone` |
 | R10 | `test_GIVEN_outdoor_state_WHEN_read_THEN_temperature_in_celsius`, `test_GIVEN_hive_held_at_35_WHEN_hours_pass_THEN_brood_estimated_and_kept_on_reload` (outdoor sensor in °F) |
-| R12 | `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload`, `test_GIVEN_hive_held_at_35_WHEN_hours_pass_THEN_brood_estimated_and_kept_on_reload` |
+| R12 | `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload`, `test_GIVEN_hive_held_at_35_WHEN_hours_pass_THEN_brood_estimated_and_kept_on_reload`, `test_GIVEN_hour_in_progress_WHEN_home_assistant_stops_THEN_hours_stored` (D15) |
+| D16 | `test_GIVEN_stored_hours_WHEN_home_assistant_starting_THEN_estimate_shown_at_once` |
 | R13 | `test_GIVEN_hive_with_stored_hours_WHEN_removed_THEN_brood_history_deleted` |
 | R14 | `test_GIVEN_entry_from_before_brood_WHEN_t_advertises_THEN_brood_sensor_added` |
 | R15 | entity IDs `sensor.broodminder_th_00_00_01_brood` and `sensor.broodminder_t_00_00_03_brood` in the tests above |

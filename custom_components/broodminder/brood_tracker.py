@@ -14,8 +14,13 @@ from homeassistant.components.weather import (
     DOMAIN as WEATHER_DOMAIN,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, STATE_UNAVAILABLE, UnitOfTemperature
-from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, State, callback
+from homeassistant.const import (
+    ATTR_UNIT_OF_MEASUREMENT,
+    EVENT_HOMEASSISTANT_FINAL_WRITE,
+    STATE_UNAVAILABLE,
+    UnitOfTemperature,
+)
+from homeassistant.core import CALLBACK_TYPE, CoreState, Event, HomeAssistant, State, callback
 from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
@@ -145,7 +150,7 @@ class BroodTracker:
         self._configured_outdoor_entity_id: str | None = entry.options.get(CONF_OUTDOOR_ENTITY)
         self._hive_available = hive_available
         self._hive_c: float | None = None
-        self._outdoor_c: float | None = None
+        self._outdoor_missing = False  # the latest sample had no outdoor temperature
         self._outdoor_read_at = dt_util.utcnow()
         self._hours: dict[int, HourlyTemperatures] = {}
         self._store: Store[list[dict[str, Any]]] = Store(
@@ -162,7 +167,7 @@ class BroodTracker:
     @property
     def status(self) -> str:
         """Return why there is no estimate, or ok."""
-        if self.estimate.status != BROOD_STATUS_OK and self._outdoor_c is None:
+        if self.estimate.status != BROOD_STATUS_OK and self._outdoor_missing:
             return BROOD_STATUS_NO_OUTDOOR_TEMPERATURE
         return self.estimate.status
 
@@ -174,9 +179,15 @@ class BroodTracker:
         """Load the stored hours and start sampling."""
         stored = await self._store.async_load() or []
         self._hours = {data["hour"]: HourlyTemperatures(**data) for data in stored}
+        # The stored hours may already give an estimate before the first sample
+        self._async_update_estimate(hour_start(dt_util.utcnow().timestamp()))
         self.hass.data.setdefault(BROOD_TRACKERS, set()).add(self)
         self._unsubscribes.append(
             async_track_time_interval(self.hass, self._async_sample, BROOD_SAMPLE_INTERVAL)
+        )
+        # Home Assistant doesn't unload its config entries when it stops
+        self._unsubscribes.append(
+            self.hass.bus.async_listen(EVENT_HOMEASSISTANT_FINAL_WRITE, self._async_save)
         )
         # Weather entities may only appear once Home Assistant has started
         self._unsubscribes.append(async_at_started(self.hass, self._async_started))
@@ -207,6 +218,10 @@ class BroodTracker:
 
         return remove_listener
 
+    async def _async_save(self, _event: Event) -> None:
+        """Store the hours, including the hour in progress, when Home Assistant stops."""
+        await self._store.async_save(self._stored_hours())
+
     @callback
     def _async_started(self, hass: HomeAssistant) -> None:
         self._async_sample(dt_util.utcnow())
@@ -220,12 +235,13 @@ class BroodTracker:
         if outdoor_entity_id != self.outdoor_entity_id:
             self.outdoor_entity_id = outdoor_entity_id
             self._outdoor_read_at = now  # a new source gets time to report
-        self._outdoor_c = (
+        outdoor_c = (
             outdoor_temperature_c(self.hass.states.get(outdoor_entity_id))
             if outdoor_entity_id
             else None
         )
-        if self._outdoor_c is not None:
+        self._outdoor_missing = outdoor_c is None
+        if outdoor_c is not None:
             self._outdoor_read_at = now
         # The last advertisement only counts while the hive is still in range
         hive_c = self._hive_c if self._hive_available() else None
@@ -233,7 +249,7 @@ class BroodTracker:
         current_hour = hour_start(now.timestamp())
         hour_completed = current_hour not in self._hours
         self._hours.setdefault(current_hour, HourlyTemperatures(current_hour)).add(
-            hive_c, self._outdoor_c
+            hive_c, outdoor_c
         )
         oldest_hour = current_hour - BROOD_HISTORY_HOURS * SECONDS_PER_HOUR
         self._hours = {hour: t for hour, t in self._hours.items() if hour >= oldest_hour}
@@ -241,13 +257,18 @@ class BroodTracker:
             # Store once an hour, so a crash loses at most the hour in progress
             self._store.async_delay_save(self._stored_hours)
 
-        self.estimate = estimate_brood(
-            brood_window(list(self._hours.values()), current_hour), self.position
-        )
+        self._async_update_estimate(current_hour)
         self._async_update_unavailable_issue(now)
         _async_update_no_weather_issue(self.hass)
         for update_callback in self._listeners:
             update_callback()
+
+    @callback
+    def _async_update_estimate(self, current_hour: int) -> None:
+        """Estimate brood from the complete hours before current_hour."""
+        self.estimate = estimate_brood(
+            brood_window(list(self._hours.values()), current_hour), self.position
+        )
 
     @callback
     def _async_update_unavailable_issue(self, now: datetime) -> None:

@@ -11,8 +11,13 @@ from bleak.backends.scanner import AdvertisementData
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, _get_manager
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigEntry, ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_FINAL_WRITE,
+    EVENT_HOMEASSISTANT_STARTED,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
+from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import (
     device_registry as dr,
@@ -868,3 +873,75 @@ async def test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without
     assert completed_hour["hour"] == datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp()
     assert completed_hour["hive_count"] == 11  # 12:07 to 12:57
     assert completed_hour["outdoor_count"] == 12  # 12:02 to 12:57
+
+
+async def test_GIVEN_hour_in_progress_WHEN_home_assistant_stops_THEN_hours_stored(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies a restart keeps the samples of the hour in progress, without an unload."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = await _setup_hive(hass, {CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR})
+    storage_key = f"{DOMAIN}.brood.{entry.entry_id}"
+    await _pass_time(hass, freezer, 5, hive_c=35.0)  # 12:27
+    await _run_due_timers(hass)
+    hass_storage.pop(storage_key)  # stored when sampling started in a new hour
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+    await hass.async_block_till_done()
+
+    hour_in_progress = hass_storage[storage_key]["data"][-1]
+    assert hour_in_progress["hour"] == datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp()
+    assert hour_in_progress["hive_count"] == 5  # 12:07 to 12:27
+    assert hour_in_progress["outdoor_count"] == 6  # 12:02 to 12:27
+
+
+async def test_GIVEN_stored_hours_WHEN_home_assistant_starting_THEN_estimate_shown_at_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies a restart shows the stored estimate before the first sample."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    current_hour = int(datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp())
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=TH_ADDRESS,
+        title=f"BroodMinder {TH_ADDRESS}",
+        data={CONF_MODEL: 56},
+        options={CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR},
+    )
+    entry.add_to_hass(hass)
+    storage_key = f"{DOMAIN}.brood.{entry.entry_id}"
+    hass_storage[storage_key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": storage_key,
+        "data": [
+            {
+                "hour": current_hour - offset * 3600,
+                "hive_sum": 35.0 * SAMPLES_PER_HOUR,
+                "hive_count": SAMPLES_PER_HOUR,
+                "outdoor_sum": 15.0 * SAMPLES_PER_HOUR,
+                "outdoor_count": SAMPLES_PER_HOUR,
+            }
+            for offset in range(24, 0, -1)
+        ],
+    }
+    hass.set_state(CoreState.starting)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(TH_BROOD)
+    assert state.state == "100"
+    assert state.attributes["status"] == "ok"
+    assert state.attributes["hours_used"] == 24
+
+    # The first sample finds no outdoor temperature yet, but the stored hours still count
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    state = hass.states.get(TH_BROOD)
+    assert state.state == "100"
+    assert state.attributes["status"] == "ok"
