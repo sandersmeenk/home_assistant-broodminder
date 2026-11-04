@@ -161,6 +161,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | R26 | The brood history file carries its format version. Every change of the format increases it. A file with an older version is migrated to the current one; a file with a newer version, left by a later version of the integration before a downgrade, is replaced by a clean file. |
 | R27 | A Home Assistant backup contains all data the brood estimate and the likely brood break need to continue: each hive's brood history (its hours and likely brood break), its settings and model, and the integration itself, also in a backup without the database. The brood history is in the state of its last hourly save: the samples taken since then, at most an hour's, aren't in the backup (D32). |
 | R28 | Restoring a Home Assistant backup restores each hive's brood history as it was in the backup. The brood estimate and the likely brood break then continue from it as if Home Assistant had been off from the backup until the restore: the backup's hours still in the window count at once (D16), and the time in between is a gap as in R22. |
+| R29 | A brood history file of any older storage version is migrated to the current one, also when the releases in between were never installed. For example, if 0.5.0 wrote version 2, 0.6.0 version 3 and 0.7.0 version 4, a user going from 0.5.0 straight to 0.7.0 gets the version 2 file migrated to version 4 at the first setup, keeping its hours and its likely brood break, as if 0.6.0 had been installed in between. |
 
 ### 3.2 Non-functional
 
@@ -209,6 +210,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | D30 | Every format change increases the major storage version; `minor_version` stays 1 | The version in the file is what makes migrations and downgrade detection possible (R26). Home Assistant's `Store` treats a file with the same major and another minor version as readable by any code with that major version, and uses it as it is. That only works for changes older code can ignore, and older code would drop the new fields at its next save without noticing. With one major version per change, every downgrade is detected and handled the same way. A newer file isn't kept as a backup: it holds at most 48 hours and the break state. | Minor versions for changes older code can ignore; keeping the newer file as a backup on a downgrade. |
 | D31 | Likely brood break since is enabled by default, as a main sensor without entity category | It is the reason for the feature, and a disabled entity is easy to miss: users would have to find and enable it on every hive. While nothing changes it costs nothing (D29). Beekeepers who don't need it can disable it. | Disabled by default; the diagnostic entity category. |
 | D32 | No backup platform: a backup holds the brood history of the last hourly save | Home Assistant saves no integration's storage before a backup; it only calls `async_pre_backup` of integrations with a `backup` platform. Without one, the backup lacks the samples since the last hourly save, at most 11. The hour in progress is in the backup with its first sample (the save comes after it, [5.1](#51-sampling)), so it still counts, from fewer samples. A restore loses the whole time between the backup and the restore, usually hours or days, so these minutes add little. | A `backup` platform whose `async_pre_backup` saves every hive's brood history, so the backup has the hour in progress: one more module and one more write per hive and backup. |
+| D33 | Migrations are chained steps, one per format change, applied in order and kept for good | HACS doesn't make users install every release, and an installation left alone for months skips several. Home Assistant's `Store` calls `_async_migrate_func` once, with the file's version, and expects data in the code's version back. Each step turns version N − 1 into version N and runs for every file older than version N, not only for version N − 1, so a file of any older version passes through every later step in turn (R29). A new format adds one step after the others; existing steps aren't changed or removed, because a file of their version can still turn up, from an installation that skipped releases or from an old backup (R28). Each step is a few lines. | A migration from the previous version only (a file two versions old fails the migration and starts clean, losing its hours and likely brood break); a direct migration from every older version to the current one (all of them rewritten at every format change); removing steps after some releases (a user who skips them loses the brood history). |
 
 ## 5. Data collection
 
@@ -698,14 +700,16 @@ of [5.2](#52-hourly-buckets) sorted by hour, and `brood_break`, the state of [7.
 | 1 | development builds of 0.5.0 | a plain list of buckets |
 | 2 | 0.5.0 | an object with `hours` and `brood_break` (D27) |
 
-Every change of the format adds a version to this table, with a migration from the previous one
-(R26, D30). When the hive is set up, the file is used as follows:
+Every change of the format adds a version to this table, with a migration step from the previous
+one after the existing steps (R26, D30, D33). The tests migrate a file of every older version in
+this table to the current one, not just the previous version, so a skipped release is covered
+(R29). When the hive is set up, the file is used as follows:
 
 | File | Result |
 |---|---|
 | missing (a new hive) | empty brood history |
 | the code's version | used |
-| an older version | migrated version by version to the code's version, and written back at once (Home Assistant's `Store` does this after a migration). Version 1 becomes `hours`, with an empty `brood_break` (R24). |
+| an older version | migrated version by version to the code's version, through every version in between, also those whose releases were never installed (R29, D33), and written back at once (Home Assistant's `Store` does this after a migration). Version 1 becomes `hours`, with an empty `brood_break` (R24). |
 | a newer version, or another `minor_version` (a downgrade) | not used: clean brood history and a warning logged. The next save, at the first sample, replaces the file by a clean one in the code's version (R26). |
 | invalid JSON | Home Assistant's `Store` renames it to `<file>.corrupt.<time>`, logs an error and raises its own repair; clean brood history (R25) |
 | unexpected content (missing or wrong fields, or a value of the wrong type such as text or `null` for a number), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, D28) |
@@ -756,6 +760,7 @@ changing versions does to the brood history and the entities:
 | 0.5.0 → 0.4.0 or earlier | Those versions don't read the brood file; it stays as it is. Home Assistant shows the Brood and Likely brood break since sensors as no longer provided by the integration; their history and the Brood statistics stay in the recorder. **Configure** disappears, the settings and the stored model stay in the config entry, and the brood repairs go (they aren't persistent). Removing a hive leaves its brood file behind. |
 | 0.4.0 or earlier → 0.5.0 again | Entities and settings return. Hours older than 48 hours are dropped, so Brood shows unknown for about 18 hours. A likely brood break that had started is kept and ends the normal way; a count in progress starts over (D26). |
 | 0.5.0 → a development build that writes version 1 | That build can't read version 2 and predates R25: the hive fails to set up, with all its sensors. Install 0.5.0 again, or remove `.storage/broodminder.brood.<config entry id>`. |
+| Any older version → a later one, skipping releases in between | The file is migrated through the formats of the skipped releases in one go: hours and likely brood break kept, as if each release had been installed in turn (R29, D33). |
 | A later version with a newer format → 0.5.0 | Detected by the version in the file: the hive sets up with a clean brood history, logs a warning and replaces the newer file (R26). |
 
 ### 12.5 Backup and restore
@@ -875,7 +880,7 @@ Likely brood break and the brood history file:
 | R20, D22, [7.6](#76-how-the-reference-scenarios-count) | `test_GIVEN_reference_scenarios_WHEN_break_thresholds_THEN_count_as_specified`, `test_GIVEN_in_comb_position_WHEN_break_rule_THEN_its_thresholds_apply` |
 | R22, D26 | `test_GIVEN_gap_of_24_hours_WHEN_counting_THEN_count_continues`, `test_GIVEN_gap_over_24_hours_WHEN_counting_THEN_count_starts_over_and_break_kept` |
 | R23 | `test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped`, `test_GIVEN_47_low_estimates_stored_WHEN_hive_set_up_THEN_break_shown_and_kept_on_reload` |
-| R24, R26, D27 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated`, `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload` (version 2) |
+| R24, R26, R29, D27, D33 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated`, `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload` (version 2; version 1 is the only older version so far) |
 | R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object, `null` sum, text `since`) |
 | R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
