@@ -190,8 +190,9 @@ BROOD_BREAK_LOW_PERCENT: dict[str, int] = {POSITION_TOP_OF_FRAMES: 30, POSITION_
 BROOD_BREAK_END_PERCENT: dict[str, int] = {POSITION_TOP_OF_FRAMES: 45, POSITION_IN_COMB: 30}
 BROOD_BREAK_START_HOURS = 48  # low estimates that start a break
 BROOD_BREAK_END_HOURS = 24  # estimates in a row above the end level that end it
-# After a longer time without an estimate, a count in progress starts over
-BROOD_BREAK_MAX_GAP_HOURS = 24
+# After a longer time without an estimate, a count in progress starts over: an outage of a day,
+# plus the hours the window needs before the next estimate
+BROOD_BREAK_MAX_GAP_HOURS = BROOD_WINDOW_HOURS + BROOD_MIN_HOURS
 
 # Automatic outdoor temperature: Met.no's weather entity for the home location, created
 # during onboarding

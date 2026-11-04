@@ -364,27 +364,79 @@ def test_GIVEN_reference_scenarios_WHEN_break_thresholds_THEN_count_as_specified
     assert _counts_as(_estimate(hours, POSITION_IN_COMB), POSITION_IN_COMB) == in_comb
 
 
-def test_GIVEN_gap_of_24_hours_WHEN_counting_THEN_count_continues() -> None:
-    """Verifies a gap of up to 24 hours without an estimate neither counts nor resets."""
+def test_GIVEN_gap_of_42_hours_WHEN_counting_THEN_count_continues() -> None:
+    """Verifies a gap of up to 42 hours without an estimate neither counts nor resets."""
     brood_break = _count([10] * 30)  # last estimate at START + 29 h
 
-    brood_break = _count([10], brood_break, first_hour=START + 53 * HOUR)
+    brood_break = _count([10], brood_break, first_hour=START + 71 * HOUR)
 
     assert brood_break.low_since == START
     assert brood_break.low_count == 31
 
 
-def test_GIVEN_gap_over_24_hours_WHEN_counting_THEN_count_starts_over_and_break_kept() -> None:
+def test_GIVEN_gap_over_42_hours_WHEN_counting_THEN_count_starts_over_and_break_kept() -> None:
     """Verifies a longer gap restarts a count in progress, but keeps a break that started."""
     brood_break = _count([10] * 30)
-    brood_break = _count([10], brood_break, first_hour=START + 54 * HOUR)
-    assert brood_break.low_since == START + 54 * HOUR
+    brood_break = _count([10], brood_break, first_hour=START + 72 * HOUR)
+    assert brood_break.low_since == START + 72 * HOUR
     assert brood_break.low_count == 1
 
     in_break = BroodBreak(since=START - 100 * HOUR, end_count=10, last_hour=START - HOUR)
-    brood_break = _count([50], in_break, first_hour=START + 24 * HOUR)
+    brood_break = _count([50], in_break, first_hour=START + 42 * HOUR)
     assert brood_break.since == START - 100 * HOUR
     assert brood_break.end_count == 1
+
+
+def _break_after_outage(outage_hours: int, *, home_assistant_off: bool) -> BroodBreak:
+    """Return the likely brood break after an outage without data, with every hour low.
+
+    Hourly data from 18 hours before START, so the first estimate is at START. During the
+    outage Home Assistant is off, or keeps estimating from the hours left in the window.
+    """
+    hours: dict[int, HourlyTemperatures] = {}
+    brood_break = BroodBreak()
+    outage_from = START + 12 * HOUR
+    outage_until = outage_from + outage_hours * HOUR
+    for hour in range(START - 18 * HOUR, outage_until + 30 * HOUR, HOUR):
+        in_outage = outage_from <= hour < outage_until
+        if in_outage and home_assistant_off:
+            continue
+        estimate = estimate_brood(
+            brood_window(list(hours.values()), hour), POSITION_TOP_OF_FRAMES
+        )
+        if estimate.brood_percent is not None:
+            brood_break = count_brood_break(
+                brood_break, hour, estimate.brood_percent, POSITION_TOP_OF_FRAMES
+            )
+        if not in_outage:
+            hours[hour] = HourlyTemperatures(hour=hour)
+            hours[hour].add(21.0, 15.0)  # far below the brood edge: 0%
+    return brood_break
+
+
+@pytest.mark.parametrize(
+    ("outage_hours", "home_assistant_off"), [(23, True), (30, False)], ids=["off", "running"]
+)
+def test_GIVEN_outage_under_a_day_WHEN_estimates_return_THEN_count_continues(
+    outage_hours: int, *, home_assistant_off: bool
+) -> None:
+    """Verifies a count continues after an outage of 23 hours, or 30 while estimating."""
+    brood_break = _break_after_outage(outage_hours, home_assistant_off=home_assistant_off)
+
+    assert brood_break.low_since == START
+
+
+@pytest.mark.parametrize(
+    ("outage_hours", "home_assistant_off"), [(24, True), (31, False)], ids=["off", "running"]
+)
+def test_GIVEN_outage_of_a_day_WHEN_estimates_return_THEN_count_starts_over(
+    outage_hours: int, *, home_assistant_off: bool
+) -> None:
+    """Verifies a count starts over after an outage of 24 hours, or 31 while estimating."""
+    brood_break = _break_after_outage(outage_hours, home_assistant_off=home_assistant_off)
+
+    # The first estimate after the outage, once 18 new hours have filled the window
+    assert brood_break.low_since == START + (12 + outage_hours + 18) * HOUR
 
 
 def test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped() -> None:

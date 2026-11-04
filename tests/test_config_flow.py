@@ -1215,6 +1215,42 @@ async def test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_
     assert hass.states.get(TH_BROOD_BREAK).state == first_low.isoformat()
 
 
+async def test_GIVEN_backup_20_hours_old_WHEN_restored_THEN_count_continues_once_window_refills(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies a count continues after a restore when the gap is shorter than a day."""
+
+    freezer.move_to("2026-06-03T12:02:00+00:00")
+    backup_hour = int(datetime(2026, 6, 2, 16, tzinfo=UTC).timestamp())
+    first_low = datetime(2026, 5, 31, 18, tzinfo=UTC)
+    # Backed up at 16:02 with 47 low estimates counted; Home Assistant was off since
+    stored = _brood_history(
+        _hours_in_backup(backup_hour, hive_c=21.0, outdoor_c=15.0),
+        {
+            "since": None,
+            "low_since": int(first_low.timestamp()),
+            "low_count": 47,
+            "end_count": 0,
+            "last_hour": backup_hour,
+        },
+    )
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = _hive_entry(hass, hass_storage, {"version": 2, "minor_version": 1, "data": stored})
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(TH_BROOD)
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["status"] == "not_enough_data"
+    assert hass.states.get(TH_BROOD_BREAK).state == STATE_UNKNOWN
+
+    # 18 new hours at 4 June 06:00, 38 hours after the backup's last estimate: the 48th low one
+    await _pass_time(hass, freezer, 18 * SAMPLES_PER_HOUR, hive_c=21.0)
+    assert hass.states.get(TH_BROOD).state == "0"
+    assert hass.states.get(TH_BROOD_BREAK).state == first_low.isoformat()
+
+
 async def test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
 ) -> None:
