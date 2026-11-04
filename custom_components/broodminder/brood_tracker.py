@@ -147,7 +147,8 @@ class BroodHistoryStore(Store[dict[str, Any]]):
         # Only the major version changes with the format, so another minor version is newer
         if old_major_version > BROOD_STORAGE_VERSION or old_minor_version != 1:
             raise UnsupportedBroodHistoryError(old_major_version, old_minor_version)
-        if old_major_version == 1:
+        # One step per format change, in order, so a file of any older version passes all
+        if old_major_version <= 1:
             # Development builds of 0.5.0 stored only the hours
             old_data = {"hours": old_data, "brood_break": asdict(BroodBreak())}
         return old_data
