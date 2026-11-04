@@ -15,8 +15,14 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Each T and TH hive has settings (**Configure** on the hive): where the sensor sits in the
   hive, and which outdoor temperature to use. By default the outdoor temperature comes from
   Home Assistant's weather.
+- BroodMinder-T and -TH hives have a new **Likely brood break since** sensor: when the Brood
+  estimate has stayed low for two days, it shows the date the brood near the sensor likely ran
+  out. It helps you time an oxalic acid treatment, which works best when there's no capped
+  brood. See "Likely brood break" in the README.
 - When the brood estimate has no outdoor temperature, a repair under **Settings** > **System** >
   **Repairs** explains how to fix it.
+- If a hive's stored brood history can't be read, for example after going back from a later
+  version, the hive's sensors keep working and the brood estimate starts again.
 - Hives added before this version get their Brood sensor and settings after their first
   broadcast once you've updated.
 

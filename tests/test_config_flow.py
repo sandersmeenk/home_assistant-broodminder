@@ -448,6 +448,8 @@ async def test_GIVEN_th_sensor_WHEN_too_short_advertisement_arrives_THEN_sensors
 
 TH_BROOD = "sensor.broodminder_th_00_00_01_brood"
 T_BROOD = "sensor.broodminder_t_00_00_03_brood"
+TH_BROOD_BREAK = "sensor.broodminder_th_00_00_01_likely_brood_break_since"
+T_BROOD_BREAK = "sensor.broodminder_t_00_00_03_likely_brood_break_since"
 OUTDOOR_SENSOR = "sensor.outdoor"
 OUTDOOR_FAHRENHEIT = {"unit_of_measurement": "°F", "device_class": "temperature"}
 WEATHER_ATTRIBUTES = {"temperature": 18.0, "temperature_unit": "°C"}
@@ -492,10 +494,60 @@ async def _run_due_timers(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
 
+def _stored_hours(
+    current_hour: int, hive_c: float, outdoor_c: float, hours: int = 24
+) -> list[dict[str, Any]]:
+    """Return stored buckets for the complete hours before current_hour."""
+    return [
+        {
+            "hour": current_hour - offset * 3600,
+            "hive_sum": hive_c * SAMPLES_PER_HOUR,
+            "hive_count": SAMPLES_PER_HOUR,
+            "outdoor_sum": outdoor_c * SAMPLES_PER_HOUR,
+            "outdoor_count": SAMPLES_PER_HOUR,
+        }
+        for offset in range(hours, 0, -1)
+    ]
+
+
+def _brood_history(
+    hours: list[dict[str, Any]], brood_break: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Return the data of a brood history file in the current storage version."""
+    return {
+        "hours": hours,
+        "brood_break": brood_break
+        or {
+            "since": None,
+            "low_since": None,
+            "low_count": 0,
+            "end_count": 0,
+            "last_hour": None,
+        },
+    }
+
+
+def _hive_entry(
+    hass: HomeAssistant, hass_storage: dict[str, Any], stored: Any
+) -> MockConfigEntry:
+    """Add the TH hive's entry, not yet set up, with a stored brood history file."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=TH_ADDRESS,
+        title=f"BroodMinder {TH_ADDRESS}",
+        data={CONF_MODEL: 56},
+        options={CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR},
+    )
+    entry.add_to_hass(hass)
+    storage_key = f"{DOMAIN}.brood.{entry.entry_id}"
+    hass_storage[storage_key] = {"key": storage_key, **stored}
+    return entry
+
+
 async def test_GIVEN_t_and_scale_WHEN_discovered_THEN_only_t_gets_brood_sensor_and_settings(
-    hass: HomeAssistant,
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
 ) -> None:
-    """Verifies only models measuring in-hive temperature get a brood estimate."""
+    """Verifies only models measuring in-hive temperature get a brood estimate and break."""
 
     await _setup_device(hass, T_ADDRESS, _t_payload())
     await _setup_device(hass, SCALE_ADDRESS, _scale_payload())
@@ -506,7 +558,11 @@ async def test_GIVEN_t_and_scale_WHEN_discovered_THEN_only_t_gets_brood_sensor_a
     assert t_entry.supports_options
     assert not scale_entry.supports_options
     assert hass.states.get(T_BROOD) is not None
-    assert "brood" not in _sensors_of(hass, "sensor.broodminder_scale_w_00_00_02")
+    assert hass.states.get(T_BROOD_BREAK).state == STATE_UNKNOWN
+    assert entity_registry.async_get(T_BROOD_BREAK).disabled_by is None
+    scale_sensors = _sensors_of(hass, "sensor.broodminder_scale_w_00_00_02")
+    assert "brood" not in scale_sensors
+    assert "likely_brood_break_since" not in scale_sensors
 
 
 async def test_GIVEN_only_a_scale_WHEN_no_weather_entity_THEN_no_repair(
@@ -724,7 +780,8 @@ async def test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without
 
     await _pass_time(hass, freezer, 1, hive_c=35.0)  # 13:02, the 12:00 hour is complete
     await _run_due_timers(hass)
-    completed_hour = hass_storage[storage_key]["data"][0]
+    assert hass_storage[storage_key]["version"] == 2
+    completed_hour = hass_storage[storage_key]["data"]["hours"][0]
     assert completed_hour["hour"] == datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp()
     assert completed_hour["hive_count"] == 11  # 12:07 to 12:57
     assert completed_hour["outdoor_count"] == 12  # 12:02 to 12:57
@@ -746,7 +803,7 @@ async def test_GIVEN_hour_in_progress_WHEN_home_assistant_stops_THEN_hours_store
     hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
     await hass.async_block_till_done()
 
-    hour_in_progress = hass_storage[storage_key]["data"][-1]
+    hour_in_progress = hass_storage[storage_key]["data"]["hours"][-1]
     assert hour_in_progress["hour"] == datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp()
     assert hour_in_progress["hive_count"] == 5  # 12:07 to 12:27
     assert hour_in_progress["outdoor_count"] == 6  # 12:02 to 12:27
@@ -759,30 +816,8 @@ async def test_GIVEN_stored_hours_WHEN_home_assistant_starting_THEN_estimate_sho
 
     freezer.move_to("2026-06-01T12:02:00+00:00")
     current_hour = int(datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp())
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        unique_id=TH_ADDRESS,
-        title=f"BroodMinder {TH_ADDRESS}",
-        data={CONF_MODEL: 56},
-        options={CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR},
-    )
-    entry.add_to_hass(hass)
-    storage_key = f"{DOMAIN}.brood.{entry.entry_id}"
-    hass_storage[storage_key] = {
-        "version": 1,
-        "minor_version": 1,
-        "key": storage_key,
-        "data": [
-            {
-                "hour": current_hour - offset * 3600,
-                "hive_sum": 35.0 * SAMPLES_PER_HOUR,
-                "hive_count": SAMPLES_PER_HOUR,
-                "outdoor_sum": 15.0 * SAMPLES_PER_HOUR,
-                "outdoor_count": SAMPLES_PER_HOUR,
-            }
-            for offset in range(24, 0, -1)
-        ],
-    }
+    stored = _brood_history(_stored_hours(current_hour, hive_c=35.0, outdoor_c=15.0))
+    entry = _hive_entry(hass, hass_storage, {"version": 2, "minor_version": 1, "data": stored})
     hass.set_state(CoreState.starting)
 
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -800,3 +835,172 @@ async def test_GIVEN_stored_hours_WHEN_home_assistant_starting_THEN_estimate_sho
     state = hass.states.get(TH_BROOD)
     assert state.state == "100"
     assert state.attributes["status"] == "ok"
+
+
+async def test_GIVEN_47_low_estimates_stored_WHEN_hive_set_up_THEN_break_shown_and_kept_on_reload(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies the estimate at setup starts a stored count's break, kept on a reload."""
+
+    freezer.move_to("2026-06-03T12:02:00+00:00")
+    current_hour = int(datetime(2026, 6, 3, 12, tzinfo=UTC).timestamp())
+    first_low = datetime(2026, 6, 1, 13, tzinfo=UTC)
+    # No brood: the hive follows the outdoor temperature, a few degrees warmer
+    stored = _brood_history(
+        _stored_hours(current_hour, hive_c=21.0, outdoor_c=15.0),
+        {
+            "since": None,
+            "low_since": int(first_low.timestamp()),
+            "low_count": 47,
+            "end_count": 0,
+            "last_hour": current_hour - 3600,
+        },
+    )
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = _hive_entry(hass, hass_storage, {"version": 2, "minor_version": 1, "data": stored})
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(TH_BROOD).state == "0"
+    assert hass.states.get(TH_BROOD_BREAK).state == first_low.isoformat()
+
+    # The reload makes the same estimate again, which counts only once
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(TH_BROOD_BREAK).state == first_low.isoformat()
+
+
+async def test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies a file of a development build of 0.5.0 is migrated, keeping its hours."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    current_hour = int(datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp())
+    hours = _stored_hours(current_hour, hive_c=35.0, outdoor_c=15.0)
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = _hive_entry(hass, hass_storage, {"version": 1, "minor_version": 1, "data": hours})
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(TH_BROOD).state == "100"
+    stored = hass_storage[f"{DOMAIN}.brood.{entry.entry_id}"]
+    assert stored["version"] == 2
+    assert stored["data"]["hours"][:24] == hours
+    assert stored["data"]["brood_break"]["since"] is None
+
+
+@pytest.mark.parametrize(
+    ("version", "minor_version"), [(3, 1), (2, 2)], ids=["newer_version", "other_minor_version"]
+)
+async def test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+    version: int,
+    minor_version: int,
+) -> None:
+    """Verifies a file left by a newer version, before a downgrade, is replaced by a clean one."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    current_hour = int(datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp())
+    stored = _brood_history(_stored_hours(current_hour, hive_c=35.0, outdoor_c=15.0))
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = _hive_entry(
+        hass, hass_storage, {"version": version, "minor_version": minor_version, "data": stored}
+    )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.states.get(TH_BROOD).attributes["status"] == "not_enough_data"
+    assert (
+        f"has storage version {version}.{minor_version}, newer than this version of the "
+        "integration supports (2.1); starting with an empty brood history"
+    ) in caplog.text
+
+    await _run_due_timers(hass)  # the first sample's save
+    stored = hass_storage[f"{DOMAIN}.brood.{entry.entry_id}"]
+    assert (stored["version"], stored["minor_version"]) == (2, 1)
+    assert len(stored["data"]["hours"]) == 1  # only the hour in progress
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"hours": [{"hour": 0, "temperature": 35.0}], "brood_break": {}},
+        {"hours": []},
+        ["not", "an", "object"],
+    ],
+    ids=["wrong_fields", "missing_brood_break", "not_an_object"],
+)
+async def test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+    data: Any,
+) -> None:
+    """Verifies a brood history file that can't be read doesn't stop the hive's sensors."""
+
+    entry = _hive_entry(hass, hass_storage, {"version": 2, "minor_version": 1, "data": data})
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    _inject(hass, TH_ADDRESS, _th_payload(temp_c=30.0))
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.states.get("sensor.broodminder_th_00_00_01_temperature").state == "30.0"
+    assert hass.states.get(TH_BROOD_BREAK).state == STATE_UNKNOWN
+    assert "could not be read" in caplog.text
+
+
+async def test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Verifies the break sensor writes its state only when it changes, unlike Brood."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    await _setup_hive(hass, {CONF_OUTDOOR_ENTITY: OUTDOOR_SENSOR})
+    brood_reported = hass.states.get(TH_BROOD).last_reported
+    break_reported = hass.states.get(TH_BROOD_BREAK).last_reported
+
+    await _pass_time(hass, freezer, 3, hive_c=35.0)
+
+    assert hass.states.get(TH_BROOD).last_reported > brood_reported
+    assert hass.states.get(TH_BROOD_BREAK).last_reported == break_reported
+
+
+async def test_GIVEN_47_low_estimates_WHEN_next_hour_completes_low_THEN_break_shown(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Verifies the sensor shows a break that starts while sampling, backdated to its start."""
+
+    freezer.move_to("2026-06-03T12:02:00+00:00")
+    current_hour = int(datetime(2026, 6, 3, 12, tzinfo=UTC).timestamp())
+    first_low = datetime(2026, 6, 1, 13, tzinfo=UTC)
+    # The estimate of this hour was counted before the restart: the 48th low one is due at 13:00
+    stored = _brood_history(
+        _stored_hours(current_hour, hive_c=21.0, outdoor_c=15.0),
+        {
+            "since": None,
+            "low_since": int(first_low.timestamp()),
+            "low_count": 47,
+            "end_count": 0,
+            "last_hour": current_hour,
+        },
+    )
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = _hive_entry(hass, hass_storage, {"version": 2, "minor_version": 1, "data": stored})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(TH_BROOD_BREAK).state == STATE_UNKNOWN
+
+    await _pass_time(hass, freezer, SAMPLES_PER_HOUR, hive_c=21.0)  # 13:02
+
+    assert hass.states.get(TH_BROOD).state == "0"
+    assert hass.states.get(TH_BROOD_BREAK).state == first_low.isoformat()

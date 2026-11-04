@@ -1,9 +1,12 @@
-"""Brood estimate from the in-hive and outdoor temperature.
+"""Brood estimate from the in-hive and outdoor temperature, and the likely brood break.
 
 A colony with brood keeps the brood nest at about 35 °C, whatever the weather. Without brood,
 the hive follows the outdoor temperature. Per hour, the estimate scores how far the colony
 keeps the hive sensor above what the weather alone would give, towards 35 °C. The day's score
 is then lowered when the hive swings along with the outdoor temperature.
+
+A likely brood break starts when the estimate stays low for two days, and ends when it stays
+clearly higher for a day.
 """
 
 from __future__ import annotations
@@ -12,6 +15,11 @@ from dataclasses import dataclass
 from statistics import quantiles
 
 from .const import (
+    BROOD_BREAK_END_HOURS,
+    BROOD_BREAK_END_PERCENT,
+    BROOD_BREAK_LOW_PERCENT,
+    BROOD_BREAK_MAX_GAP_HOURS,
+    BROOD_BREAK_START_HOURS,
     BROOD_EDGE_TEMP_C,
     BROOD_MIN_HOURS,
     BROOD_STATUS_NOT_ENOUGH_DATA,
@@ -70,6 +78,17 @@ class BroodEstimate:
     hours_used: int = 0
 
 
+@dataclass(frozen=True)
+class BroodBreak:
+    """Likely brood break, and the counts in progress that start or end one."""
+
+    since: int | None = None  # start of the likely brood break, in seconds since the epoch
+    low_since: int | None = None  # first estimate of the low count in progress
+    low_count: int = 0
+    end_count: int = 0  # estimates in a row above the end level, during a break
+    last_hour: int | None = None  # time of the last counted estimate
+
+
 def hour_start(timestamp: float) -> int:
     """Return the start of the hour containing timestamp, in seconds since the epoch."""
     return int(timestamp) // SECONDS_PER_HOUR * SECONDS_PER_HOUR
@@ -105,6 +124,39 @@ def estimate_brood(hours: list[tuple[float, float]], position: str) -> BroodEsti
         stability=stability,
         hours_used=len(hours),
     )
+
+
+def count_brood_break(
+    brood_break: BroodBreak, hour: int, brood_percent: int, position: str
+) -> BroodBreak:
+    """Return the likely brood break after the brood estimate made for hour.
+
+    hour is the end of the estimate's window. An estimate that was already counted, for
+    example before a restart, changes nothing.
+    """
+    if brood_break.last_hour is not None:
+        if hour <= brood_break.last_hour:
+            return brood_break
+        if hour - brood_break.last_hour > BROOD_BREAK_MAX_GAP_HOURS * SECONDS_PER_HOUR:
+            # Estimates weeks apart don't make a count; a break that has started is kept
+            brood_break = BroodBreak(since=brood_break.since)
+
+    if brood_break.since is None:
+        if brood_percent > BROOD_BREAK_LOW_PERCENT[position]:
+            return BroodBreak(last_hour=hour)
+        low_since = hour if brood_break.low_since is None else brood_break.low_since
+        low_count = brood_break.low_count + 1
+        if low_count >= BROOD_BREAK_START_HOURS:
+            # Shown from the first low estimate, so the days count from the drop
+            return BroodBreak(since=low_since, last_hour=hour)
+        return BroodBreak(low_since=low_since, low_count=low_count, last_hour=hour)
+
+    if brood_percent <= BROOD_BREAK_END_PERCENT[position]:
+        return BroodBreak(since=brood_break.since, last_hour=hour)
+    end_count = brood_break.end_count + 1
+    if end_count >= BROOD_BREAK_END_HOURS:
+        return BroodBreak(last_hour=hour)
+    return BroodBreak(since=brood_break.since, end_count=end_count, last_hour=hour)
 
 
 def _clamp(value: float) -> float:

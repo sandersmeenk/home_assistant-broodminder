@@ -1,4 +1,4 @@
-"""Keeps a hive's brood estimate up to date from its temperature and the outdoor temperature."""
+"""Keeps a hive's brood estimate and likely brood break up to date."""
 
 from __future__ import annotations
 
@@ -35,9 +35,11 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .brood import (
     SECONDS_PER_HOUR,
+    BroodBreak,
     BroodEstimate,
     HourlyTemperatures,
     brood_window,
+    count_brood_break,
     estimate_brood,
     hour_start,
 )
@@ -108,6 +110,31 @@ def _storage_key(entry: ConfigEntry) -> str:
     return f"{DOMAIN}.brood.{entry.entry_id}"
 
 
+class UnsupportedBroodHistoryError(Exception):
+    """The brood history file has a storage version this code doesn't know."""
+
+    def __init__(self, major_version: int, minor_version: int) -> None:
+        """Initialize with the file's storage version."""
+        self.version = f"{major_version}.{minor_version}"
+        super().__init__(self.version)
+
+
+class BroodHistoryStore(Store[dict[str, Any]]):
+    """The brood history file of a hive: older storage versions are migrated."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: Any
+    ) -> dict[str, Any]:
+        """Migrate an older file; a newer one is left by a downgrade and can't be read."""
+        # Only the major version changes with the format, so another minor version is newer
+        if old_major_version > BROOD_STORAGE_VERSION or old_minor_version != 1:
+            raise UnsupportedBroodHistoryError(old_major_version, old_minor_version)
+        if old_major_version == 1:
+            # Development builds of 0.5.0 stored only the hours
+            old_data = {"hours": old_data, "brood_break": asdict(BroodBreak())}
+        return old_data
+
+
 @callback
 def _async_update_no_weather_issue(hass: HomeAssistant) -> None:
     """Raise the repair while a hive finds no weather entity, and withdraw it otherwise."""
@@ -147,15 +174,14 @@ class BroodTracker:
         self.position: str = entry.options.get(CONF_SENSOR_POSITION, DEFAULT_SENSOR_POSITION)
         self.outdoor_entity_id: str | None = None
         self.estimate = BroodEstimate(BROOD_STATUS_NOT_ENOUGH_DATA)
+        self.brood_break = BroodBreak()
         self._configured_outdoor_entity_id: str | None = entry.options.get(CONF_OUTDOOR_ENTITY)
         self._hive_available = hive_available
         self._hive_c: float | None = None
         self._outdoor_missing = False  # the latest sample had no outdoor temperature
         self._outdoor_read_at = dt_util.utcnow()
         self._hours: dict[int, HourlyTemperatures] = {}
-        self._store: Store[list[dict[str, Any]]] = Store(
-            hass, BROOD_STORAGE_VERSION, _storage_key(entry)
-        )
+        self._store = BroodHistoryStore(hass, BROOD_STORAGE_VERSION, _storage_key(entry))
         self._listeners: list[Callable[[], None]] = []
         self._unsubscribes: list[CALLBACK_TYPE] = []
 
@@ -176,9 +202,26 @@ class BroodTracker:
         return f"{ISSUE_OUTDOOR_UNAVAILABLE}_{self.entry.entry_id}"
 
     async def async_start(self) -> None:
-        """Load the stored hours and start sampling."""
-        stored = await self._store.async_load() or []
-        self._hours = {data["hour"]: HourlyTemperatures(**data) for data in stored}
+        """Load the stored hours and brood break, and start sampling."""
+        # A file that can't be used must not keep the hive's other sensors from working; the
+        # next save replaces it
+        try:
+            self._load(await self._store.async_load())
+        except UnsupportedBroodHistoryError as err:
+            _LOGGER.warning(
+                "Brood history of %s has storage version %s, newer than this version of the "
+                "integration supports (%s.1); starting with an empty brood history",
+                self._hive_name(),
+                err.version,
+                BROOD_STORAGE_VERSION,
+            )
+        except (KeyError, TypeError) as err:
+            _LOGGER.warning(
+                "Brood history of %s could not be read (%r); starting with an empty brood "
+                "history",
+                self._hive_name(),
+                err,
+            )
         # The stored hours may already give an estimate before the first sample
         self._async_update_estimate(hour_start(dt_util.utcnow().timestamp()))
         self.hass.data.setdefault(BROOD_TRACKERS, set()).add(self)
@@ -200,7 +243,7 @@ class BroodTracker:
         self.hass.data[BROOD_TRACKERS].discard(self)
         ir.async_delete_issue(self.hass, DOMAIN, self._unavailable_issue_id)
         _async_update_no_weather_issue(self.hass)
-        await self._store.async_save(self._stored_hours())
+        await self._store.async_save(self._stored_data())
 
     @callback
     def async_set_hive_temperature(self, temperature_c: float | None) -> None:
@@ -220,7 +263,7 @@ class BroodTracker:
 
     async def _async_save(self, _event: Event) -> None:
         """Store the hours, including the hour in progress, when Home Assistant stops."""
-        await self._store.async_save(self._stored_hours())
+        await self._store.async_save(self._stored_data())
 
     @callback
     def _async_started(self, hass: HomeAssistant) -> None:
@@ -254,8 +297,9 @@ class BroodTracker:
         oldest_hour = current_hour - BROOD_HISTORY_HOURS * SECONDS_PER_HOUR
         self._hours = {hour: t for hour, t in self._hours.items() if hour >= oldest_hour}
         if hour_completed:
-            # Store once an hour, so a crash loses at most the hour in progress
-            self._store.async_delay_save(self._stored_hours)
+            # Store once an hour, so a crash loses at most the hour in progress. The data is
+            # taken when it's written, after this sample, so it has the hour's brood break.
+            self._store.async_delay_save(self._stored_data)
 
         self._async_update_estimate(current_hour)
         self._async_update_unavailable_issue(now)
@@ -265,10 +309,14 @@ class BroodTracker:
 
     @callback
     def _async_update_estimate(self, current_hour: int) -> None:
-        """Estimate brood from the complete hours before current_hour."""
+        """Estimate brood from the complete hours before current_hour, and count it."""
         self.estimate = estimate_brood(
             brood_window(list(self._hours.values()), current_hour), self.position
         )
+        if self.estimate.brood_percent is not None:
+            self.brood_break = count_brood_break(
+                self.brood_break, current_hour, self.estimate.brood_percent, self.position
+            )
 
     @callback
     def _async_update_unavailable_issue(self, now: datetime) -> None:
@@ -308,5 +356,18 @@ class BroodTracker:
             return self.entry.title
         return device.name_by_user or device.name or self.entry.title
 
-    def _stored_hours(self) -> list[dict[str, Any]]:
-        return [asdict(hours) for hours in sorted(self._hours.values(), key=lambda h: h.hour)]
+    def _load(self, stored: dict[str, Any] | None) -> None:
+        """Take the hours and brood break from stored data, or keep them empty."""
+        if stored is None:
+            return
+        hours = {data["hour"]: HourlyTemperatures(**data) for data in stored["hours"]}
+        self.brood_break = BroodBreak(**stored["brood_break"])
+        self._hours = hours
+
+    def _stored_data(self) -> dict[str, Any]:
+        return {
+            "hours": [
+                asdict(hours) for hours in sorted(self._hours.values(), key=lambda h: h.hour)
+            ],
+            "brood_break": asdict(self.brood_break),
+        }

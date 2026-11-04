@@ -165,9 +165,21 @@ BROOD_WINDOW_HOURS = 24
 BROOD_MIN_HOURS = 18  # hours in the window with both temperatures
 BROOD_HISTORY_HOURS = 48  # hours kept in storage
 BROOD_SAMPLE_INTERVAL = timedelta(minutes=5)
-BROOD_STORAGE_VERSION = 1
+# Increase with every change of the brood history file's format, and migrate the previous one
+BROOD_STORAGE_VERSION = 2
 # Short outages of the outdoor temperature are normal; only longer ones raise a repair
 OUTDOOR_UNAVAILABLE_ISSUE_AFTER = timedelta(hours=3)
+
+# Likely brood break: the Brood % stays low for days
+SENSOR_BROOD_BREAK = "brood_break"
+# At or below this an estimate is low; a broodless hive scores higher on top of the frames
+BROOD_BREAK_LOW_PERCENT: dict[str, int] = {POSITION_TOP_OF_FRAMES: 30, POSITION_IN_COMB: 15}
+# Above this an estimate counts towards the end of a break; higher than low, so it can't flicker
+BROOD_BREAK_END_PERCENT: dict[str, int] = {POSITION_TOP_OF_FRAMES: 45, POSITION_IN_COMB: 30}
+BROOD_BREAK_START_HOURS = 48  # low estimates that start a break
+BROOD_BREAK_END_HOURS = 24  # estimates in a row above the end level that end it
+# After a longer time without an estimate, a count in progress starts over
+BROOD_BREAK_MAX_GAP_HOURS = 24
 
 # Automatic outdoor temperature: Met.no's weather entity for the home location, created
 # during onboarding

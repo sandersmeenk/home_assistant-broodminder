@@ -5,10 +5,9 @@ brood break built on it: requirements, design decisions, the algorithms with the
 constants, configuration, persistence and how to verify it. It describes the implementation as
 of version 0.5.0.
 
-- Status: brood estimate implemented; likely brood break ([section 7](#7-likely-brood-break)
-  and everything marked *not yet implemented*) specified but not yet implemented. Constants not
-  yet calibrated against real hives (see [Calibration](#14-calibration)).
-- Code: [`brood.py`](custom_components/broodminder/brood.py) (algorithm),
+- Status: implemented, constants not yet calibrated against real hives (see
+  [Calibration](#14-calibration))
+- Code: [`brood.py`](custom_components/broodminder/brood.py) (algorithms),
   [`brood_tracker.py`](custom_components/broodminder/brood_tracker.py) (sampling, outdoor
   temperature, storage, repairs), [`config_flow.py`](custom_components/broodminder/config_flow.py)
   (settings), [`sensor.py`](custom_components/broodminder/sensor.py) (entities),
@@ -149,7 +148,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | R13 | Removing a hive deletes its stored brood history, including its likely brood break. |
 | R14 | Hives configured before this feature (no model stored) get their Brood sensor and settings after their first advertisement, without user action. |
 | R15 | A Brood sensor on the hive's device keeps the device name and model the other sensors use, also when it is created before the hive has advertised. |
-| R16 | Hives that get a Brood sensor also get a *Likely brood break since* sensor, on the same device. Other models get neither. |
+| R16 | Hives that get a Brood sensor also get a *Likely brood break since* sensor, on the same device and enabled by default. Other models get neither. |
 | R17 | The Likely brood break since sensor shows when the current likely brood break started, as a date and time, and unknown when there is no likely brood break. It has no attributes. |
 | R18 | A likely brood break starts once the Brood % has been at or below the low threshold for 48 hourly estimates, without an estimate above it in between. The start shown is the time of the first of those 48 estimates. |
 | R19 | A likely brood break ends once the Brood % has been above the end level for 24 hourly estimates in a row. The end level is higher than the low threshold. |
@@ -160,9 +159,6 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | R24 | A brood history file written by a development build of 0.5.0 (storage version 1) is migrated, keeping its hours. |
 | R25 | A brood history file that can't be used (a newer version, invalid JSON, unexpected content or a failing migration) doesn't stop the hive from setting up: the hive starts with a clean brood history and a warning is logged (for invalid JSON, Home Assistant's own repair). |
 | R26 | The brood history file carries its format version. Every change of the format increases it. A file with an older version is migrated to the current one; a file with a newer version, left by a later version of the integration before a downgrade, is replaced by a clean file. |
-
-R16 to R26 (the likely brood break and the storage changes it needs) are specified but not yet
-implemented.
 
 ### 3.2 Non-functional
 
@@ -209,8 +205,7 @@ implemented.
 | D28 | A brood history file that can't be read or migrated starts empty | Home Assistant's `Store` raises on a storage version it can't migrate, and the tracker loads the file during the hive's setup, so all the hive's sensors failed to set up, not just Brood. Losing up to 48 hours and the break state costs less. Protects every later change of the file format, for example when going back to an older version. | Fail the setup, as before. |
 | D29 | Write the Likely brood break since state only when it changes | The tracker calls its listeners every 5 minutes. For the Brood sensor that refreshes the recorder row's last-reported time each time ([12.2](#122-other-storage)). The break changes a few times a year, so writing only on change leaves the recorder idle. | Write on every sample, like the Brood sensor. |
 | D30 | Every format change increases the major storage version; `minor_version` stays 1 | The version in the file is what makes migrations and downgrade detection possible (R26). Home Assistant's `Store` treats a file with the same major and another minor version as readable by any code with that major version, and uses it as it is. That only works for changes older code can ignore, and older code would drop the new fields at its next save without noticing. With one major version per change, every downgrade is detected and handled the same way. A newer file isn't kept as a backup: it holds at most 48 hours and the break state. | Minor versions for changes older code can ignore; keeping the newer file as a backup on a downgrade. |
-
-D19 to D30 (the likely brood break and the storage changes it needs) are not yet implemented.
+| D31 | Likely brood break since is enabled by default, as a main sensor without entity category | It is the reason for the feature, and a disabled entity is easy to miss: users would have to find and enable it on every hive. While nothing changes it costs nothing (D29). Beekeepers who don't need it can disable it. | Disabled by default; the diagnostic entity category. |
 
 ## 5. Data collection
 
@@ -228,8 +223,8 @@ sample:
 5. Drop buckets older than 48 hours (`BROOD_HISTORY_HOURS`).
 6. If this sample started a new hour, store all buckets ([12.1](#121-brood-history-file)).
 7. Recompute the estimate over the window ([5.3](#53-window)) and update the repairs.
-8. Count the estimate for the likely brood break ([7.1](#71-input)); the next hourly save stores
-   it. *Not yet implemented.*
+8. Count the estimate for the likely brood break ([7.1](#71-input)). The save of step 6 takes
+   its data when it writes, after the sample, so it stores this count too.
 9. Update the Brood sensor's state, and the Likely brood break since state if it changed.
 
 The hive temperature is updated on every parsed advertisement; an advertisement without a valid
@@ -390,7 +385,7 @@ two worked examples are asserted exactly.
 
 ## 7. Likely brood break
 
-*Not yet implemented.* The likely brood break follows the Brood % over the days: it starts when
+The likely brood break follows the Brood % over the days: it starts when
 the Brood % stays low for two days, and ends when it stays clearly higher for a day. Why a low
 Brood % matters for treatment is in
 [2.4](#24-brood-development-and-the-window-without-capped-brood).
@@ -415,7 +410,7 @@ The estimate changes once an hour, so there is at most one input an hour.
 | `p_end` | `BROOD_BREAK_END_PERCENT` | 45% on top of the frames, 30% in the comb | Above this, an estimate counts towards the end of a break |
 | `n_start` | `BROOD_BREAK_START_HOURS` | 48 | Low estimates that start a break |
 | `n_end` | `BROOD_BREAK_END_HOURS` | 24 | Estimates in a row above `p_end` that end a break |
-| `gap_max` | `BROOD_BREAK_MAX_GAP` | 24 hours | A longer time between two estimates restarts a count in progress |
+| `gap_max` | `BROOD_BREAK_MAX_GAP_HOURS` | 24 hours | A longer time between two estimates restarts a count in progress |
 
 ### 7.3 State
 
@@ -445,7 +440,7 @@ if since is none:                                     no likely break
         if low_since is none:
             low_since = h
         low_count += 1
-        if low_count = n_start:
+        if low_count ≥ n_start:
             since = low_since                         break starts, backdated (D23)
             low_since, low_count = none, 0
     else:
@@ -453,7 +448,7 @@ if since is none:                                     no likely break
 else:                                                 likely break
     if p > p_end:
         end_count += 1
-        if end_count = n_end:
+        if end_count ≥ n_end:
             since, end_count = none, 0                break ends
     else:
         end_count = 0                                 end count starts over
@@ -520,6 +515,8 @@ temperature can't tell them from no brood (D21, [16](#16-known-limitations)).
 | Unit, state class | none: a timestamp sensor has neither, so there are no long-term statistics |
 | Attributes | none |
 | Icon | `mdi:hexagon-multiple-outline` |
+| Enabled by default | yes (D31) |
+| Entity category | none: a main sensor, not diagnostic or configuration |
 | Availability | always available while the hive is loaded, like the Brood sensor (D14) |
 | Updates | when the hive is set up, and when a break starts or ends (D29) |
 
@@ -588,7 +585,7 @@ All tunable values are in [`const.py`](custom_components/broodminder/const.py) a
 |---|---|---|
 | `BROOD_SAMPLE_INTERVAL` | 5 minutes | Sampling interval |
 | `BROOD_HISTORY_HOURS` | 48 | Hours kept in memory and storage |
-| `BROOD_STORAGE_VERSION` | 2 (1 until the likely brood break is implemented) | Format version of the brood history file, increased with every format change ([12.1](#121-brood-history-file), D30) |
+| `BROOD_STORAGE_VERSION` | 2 | Format version of the brood history file, increased with every format change ([12.1](#121-brood-history-file), D30) |
 | `OUTDOOR_UNAVAILABLE_ISSUE_AFTER` | 3 hours | How long the outdoor temperature may be missing before the per-hive repair |
 | `MET_DOMAIN`, `MET_HOME_UNIQUE_ID` | `met`, `home` | How Met.no's home weather entity is recognised |
 
@@ -603,6 +600,8 @@ All tunable values are in [`const.py`](custom_components/broodminder/const.py) a
 | State | integer percentage 0 to 100, or unknown |
 | Unit, state class | `%`, `measurement` (so Home Assistant keeps long-term statistics) |
 | Icon | `mdi:hexagon-multiple` |
+| Enabled by default | yes |
+| Entity category | none: a main sensor, not diagnostic or configuration |
 | Availability | always available while the hive is loaded (D14) |
 | Updates | after every sample; the value changes at most once an hour |
 
@@ -703,24 +702,23 @@ Every change of the format adds a version to this table, with a migration from t
 | missing (a new hive) | empty brood history |
 | the code's version | used |
 | an older version | migrated version by version to the code's version, and written back at once (Home Assistant's `Store` does this after a migration). Version 1 becomes `hours`, with an empty `brood_break` (R24). |
-| a newer version, or another `minor_version` (a downgrade) | not used: clean brood history, warning logged, and the file replaced by a clean one in the code's version when the hive is set up (R26) |
+| a newer version, or another `minor_version` (a downgrade) | not used: clean brood history and a warning logged. The next save, at the first sample, replaces the file by a clean one in the code's version (R26). |
 | invalid JSON | Home Assistant's `Store` renames it to `<file>.corrupt.<time>`, logs an error and raises its own repair; clean brood history (R25) |
-| unexpected content (missing or wrong fields), or a migration that fails | clean brood history, warning logged; replaced at the next save (R25, D28) |
+| unexpected content (missing or wrong fields), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, D28) |
 
 Log texts:
 
-- `Brood history of <hive> has storage version <version>, newer than this version of the
-  integration supports (<supported>); starting with an empty brood history`
+- `Brood history of <hive> has storage version <major>.<minor>, newer than this version of the
+  integration supports (<BROOD_STORAGE_VERSION>.1); starting with an empty brood history`
 - `Brood history of <hive> could not be read (<error>); starting with an empty brood history`
 
-`<hive>` is the device name as in [11.2](#112-outdoor-temperature-unavailable).
+`<hive>` is the device name as in [11.2](#112-outdoor-temperature-unavailable). The first
+sample starts a new hour, because the brood history is empty, so the save comes at once when
+Home Assistant is running, or when it has started (D12).
 
 Version 1 was 8.3 KB. Of the 0.9 KB more in version 2, about 0.2 KB is the break state; the rest
 is the two spaces of indentation each line of the hours gets inside the object (measured with 49
 buckets).
-
-*Not yet implemented:* the code writes version 1, without `brood_break`, migration or the
-handling of a newer or unreadable file; today such a file makes the hive fail to set up.
 
 ### 12.2 Other storage
 
@@ -769,10 +767,7 @@ changing versions does to the brood history and the entities:
 | Unload | Sampling stops, buckets and likely brood break saved, the hive's unavailable repair withdrawn, the shared repair re-evaluated. |
 | Removal | Unload, then the history file, with the likely brood break, is deleted. |
 | Home Assistant restart | All buckets, including the hour in progress, and the likely brood break written at the final write; repairs not kept; the per-hive repair can only reappear after 3 hours. |
-| Crash or power loss | At most the hour in progress is lost, with the estimate the likely brood break counted in it: a one-hour gap (R22). |
-
-*Not yet implemented:* everything above about the likely brood break and the brood file's
-migration.
+| Crash or power loss | At most the hour in progress is lost. The likely brood break was stored at the start of that hour, with the hour's estimate already counted ([5.1](#51-sampling)). |
 
 ## 14. Calibration
 
@@ -822,23 +817,24 @@ Run with `scripts/test`; `scripts/lint` must be clean.
 | R15 | entity IDs `sensor.broodminder_th_00_00_01_brood` and `sensor.broodminder_t_00_00_03_brood` in the tests above |
 | D8 | `test_GIVEN_hive_held_at_35_WHEN_hours_pass_THEN_brood_estimated_and_kept_on_reload` sends identical advertisements, which Home Assistant drops after the first |
 
-Planned tests for the likely brood break, not yet written:
+Likely brood break and the brood history file:
 
 | Requirement | Tests |
 |---|---|
-| R16 | `test_GIVEN_t_and_scale_WHEN_discovered_THEN_only_t_gets_brood_sensor_and_settings`, extended to Likely brood break since |
-| R17, R18, R21, rule ([7.4](#74-rule)) | `test_GIVEN_48_low_estimates_WHEN_break_rule_THEN_break_since_first_low_estimate`, `test_GIVEN_47_low_estimates_WHEN_break_rule_THEN_no_break`, `test_GIVEN_estimate_above_low_WHEN_counting_low_THEN_count_starts_over` |
+| R16, D31 | `test_GIVEN_t_and_scale_WHEN_discovered_THEN_only_t_gets_brood_sensor_and_settings` (also Likely brood break since, enabled by default) |
+| R17, R18, R21, rule ([7.4](#74-rule)) | `test_GIVEN_48_low_estimates_WHEN_break_rule_THEN_break_since_first_low_estimate`, `test_GIVEN_47_low_estimates_WHEN_break_rule_THEN_no_break`, `test_GIVEN_estimate_above_low_WHEN_counting_low_THEN_count_starts_over`, `test_GIVEN_47_low_estimates_WHEN_next_hour_completes_low_THEN_break_shown` |
 | R19, D24 | `test_GIVEN_break_WHEN_24_estimates_above_end_level_THEN_break_ends`, `test_GIVEN_break_WHEN_estimates_between_low_and_end_level_THEN_break_continues` |
-| R20, [7.6](#76-how-the-reference-scenarios-count) | `test_GIVEN_reference_scenarios_WHEN_break_thresholds_THEN_count_as_specified` |
+| R20, D22, [7.6](#76-how-the-reference-scenarios-count) | `test_GIVEN_reference_scenarios_WHEN_break_thresholds_THEN_count_as_specified`, `test_GIVEN_in_comb_position_WHEN_break_rule_THEN_its_thresholds_apply` |
 | R22, D26 | `test_GIVEN_gap_of_24_hours_WHEN_counting_THEN_count_continues`, `test_GIVEN_gap_over_24_hours_WHEN_counting_THEN_count_starts_over_and_break_kept` |
-| R23 | `test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped`, `test_GIVEN_brood_break_WHEN_hive_reloaded_THEN_break_since_kept` |
-| R24, R26 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated` |
-| R25, D28 | `test_GIVEN_brood_history_with_unexpected_content_WHEN_hive_set_up_THEN_sensors_work_and_warning_logged`, `test_GIVEN_corrupt_brood_history_WHEN_hive_set_up_THEN_clean_history` |
-| R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_hive_set_up_THEN_clean_file_and_warning_logged`, `test_GIVEN_other_minor_version_WHEN_hive_set_up_THEN_clean_file_and_warning_logged` |
+| R23 | `test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped`, `test_GIVEN_47_low_estimates_stored_WHEN_hive_set_up_THEN_break_shown_and_kept_on_reload` |
+| R24, R26, D27 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated`, `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload` (version 2) |
+| R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object) |
+| R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
 
 Not covered by automated tests: N1 to N4 (by review), the startup guard of the shared repair
-(D12), and real Bluetooth reception.
+(D12), a brood history file with invalid JSON (handled by Home Assistant's `Store`, which the
+test storage bypasses), and real Bluetooth reception.
 
 ### 15.2 Manual checks on real hardware
 
