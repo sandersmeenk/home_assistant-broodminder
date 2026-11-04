@@ -114,7 +114,7 @@ match the code.
 - When the algorithm or a constant changes, recompute the reference values table (section
   6.8) with the scenarios in `tests/test_brood.py`, and the table of how they count for the
   likely brood break (section 7.6).
-- Give new requirements and decisions the next free ID (`R27`, `D32`, ...) and don't renumber
+- Give new requirements and decisions the next free ID (`R32`, `D35`, ...) and don't renumber
   existing ones. When a decision is reversed, update it and record why.
 - Every change to the format of the brood history file (`.storage/broodminder.brood.*`)
   increases `BROOD_STORAGE_VERSION`, adds a migration from the previous version with a test,

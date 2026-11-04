@@ -162,6 +162,8 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | R27 | A Home Assistant backup contains all data the brood estimate and the likely brood break need to continue: each hive's brood history (its hours and likely brood break), its settings and model, and the integration itself, also in a backup without the database. The brood history is in the state of its last hourly save: the samples taken since then, at most an hour's, aren't in the backup (D32). |
 | R28 | Restoring a Home Assistant backup restores each hive's brood history as it was in the backup. The brood estimate and the likely brood break then continue from it as if Home Assistant had been off from the backup until the restore: the backup's hours still in the window count at once (D16), and the time in between is a gap as in R22. |
 | R29 | A brood history file of any older storage version is migrated to the current one, also when the releases in between were never installed. For example, if 0.5.0 wrote version 2, 0.6.0 version 3 and 0.7.0 version 4, a user going from 0.5.0 straight to 0.7.0 gets the version 2 file migrated to version 4 at the first setup, keeping its hours and its likely brood break, as if 0.6.0 had been installed in between. |
+| R30 | An outdoor temperature that isn't a finite number (`nan`, `inf`) is not used, like a missing one. Only finite numbers reach the hourly buckets and the brood history file. |
+| R31 | A stored value of the wrong type (text, `null`, `true` or `false`, or a number that isn't finite where a number is expected) is unexpected content (R25): the hive starts with a clean brood history and a warning is logged. A whole number where a decimal is expected is accepted. |
 
 ### 3.2 Non-functional
 
@@ -211,6 +213,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | D31 | Likely brood break since is enabled by default, as a main sensor without entity category | It is the reason for the feature, and a disabled entity is easy to miss: users would have to find and enable it on every hive. While nothing changes it costs nothing (D29). Beekeepers who don't need it can disable it. | Disabled by default; the diagnostic entity category. |
 | D32 | No backup platform: a backup holds the brood history of the last hourly save | Home Assistant saves no integration's storage before a backup; it only calls `async_pre_backup` of integrations with a `backup` platform. Without one, the backup lacks the samples since the last hourly save, at most 11. The hour in progress is in the backup with its first sample (the save comes after it, [5.1](#51-sampling)), so it still counts, from fewer samples. A restore loses the whole time between the backup and the restore, usually hours or days, so these minutes add little. | A `backup` platform whose `async_pre_backup` saves every hive's brood history, so the backup has the hour in progress: one more module and one more write per hive and backup. |
 | D33 | Migrations are chained steps, one per format change, applied in order and kept for good | HACS doesn't make users install every release, and an installation left alone for months skips several. Home Assistant's `Store` calls `_async_migrate_func` once, with the file's version, and expects data in the code's version back. Each step turns version N − 1 into version N and runs for every file older than version N, not only for version N − 1, so a file of any older version passes through every later step in turn (R29). A new format adds one step after the others; existing steps aren't changed or removed, because a file of their version can still turn up, from an installation that skipped releases or from an old backup (R28). Each step is a few lines. | A migration from the previous version only (a file two versions old fails the migration and starts clean, losing its hours and likely brood break); a direct migration from every older version to the current one (all of them rewritten at every format change); removing steps after some releases (a user who skips them loses the brood history). |
+| D34 | Check every stored field's type when the file is loaded, against the type its dataclass declares | `HourlyTemperatures(**data)` and `BroodBreak(**data)` accept any value. A `null` sum (how orjson writes NaN, which an outdoor state `nan` used to produce) failed later in the estimate at setup, outside the load guard: the hive's setup failed without a retry and the file was never replaced. Text in `since` failed in the sensor and left the hive without sensors. Checking at load keeps every bad file inside the R25 handling. | Catching errors wherever bad values are used; replacing bad values one by one with defaults (keeps a file of unknown origin). |
 
 ## 5. Data collection
 
@@ -551,7 +554,7 @@ The resolved entity is shown in the sensor's `outdoor_entity` attribute.
 - The unit must be °C, °F or K, otherwise no value. The value is converted to °C with Home
   Assistant's `TemperatureConverter`.
 - A value that isn't a number (for example a sensor state `unknown`), or isn't finite (`nan`,
-  `inf`): no value.
+  `inf`): no value (R30).
 
 ### 8.3 Accuracy notes
 
@@ -712,7 +715,7 @@ this table to the current one, not just the previous version, so a skipped relea
 | an older version | migrated version by version to the code's version, through every version in between, also those whose releases were never installed (R29, D33), and written back at once (Home Assistant's `Store` does this after a migration). Version 1 becomes `hours`, with an empty `brood_break` (R24). |
 | a newer version, or another `minor_version` (a downgrade) | not used: clean brood history and a warning logged. The next save, at the first sample, replaces the file by a clean one in the code's version (R26). |
 | invalid JSON | Home Assistant's `Store` renames it to `<file>.corrupt.<time>`, logs an error and raises its own repair; clean brood history (R25) |
-| unexpected content (missing or wrong fields, or a value of the wrong type such as text or `null` for a number), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, D28) |
+| unexpected content (missing or wrong fields, or a value of the wrong type such as text or `null` for a number), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, R31, D28, D34) |
 
 Log texts:
 
@@ -881,7 +884,9 @@ Likely brood break and the brood history file:
 | R22, D26 | `test_GIVEN_gap_of_24_hours_WHEN_counting_THEN_count_continues`, `test_GIVEN_gap_over_24_hours_WHEN_counting_THEN_count_starts_over_and_break_kept` |
 | R23 | `test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped`, `test_GIVEN_47_low_estimates_stored_WHEN_hive_set_up_THEN_break_shown_and_kept_on_reload` |
 | R24, R26, R29, D27, D33 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated`, `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload` (version 2; version 1 is the only older version so far) |
-| R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object, `null` sum, text `since`) |
+| R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object) |
+| R30 | `test_GIVEN_outdoor_state_WHEN_read_THEN_temperature_in_celsius` (sensor `nan` and `inf`, weather `nan`) |
+| R31, D34 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (`null` sum, text `since`, `true` count), `test_GIVEN_brood_history_with_whole_number_sums_WHEN_set_up_THEN_hours_used` |
 | R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
 | R28, D32 | `test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_count_continues`, `test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over` (a brood history file as of a backup, with the hour in progress at its first sample) |

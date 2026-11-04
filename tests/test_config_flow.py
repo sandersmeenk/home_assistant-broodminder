@@ -1100,8 +1100,18 @@ async def test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and
             [{**_stored_hours(3600, hive_c=35.0, outdoor_c=15.0)[0], "outdoor_sum": None}]
         ),
         _brood_history([], {**asdict(BroodBreak()), "since": "yesterday"}),
+        _brood_history(
+            [{**_stored_hours(3600, hive_c=35.0, outdoor_c=15.0)[0], "hive_count": True}]
+        ),
     ],
-    ids=["wrong_fields", "missing_brood_break", "not_an_object", "null_sum", "text_since"],
+    ids=[
+        "wrong_fields",
+        "missing_brood_break",
+        "not_an_object",
+        "null_sum",
+        "text_since",
+        "bool_count",
+    ],
 )
 async def test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged(
     hass: HomeAssistant,
@@ -1239,3 +1249,26 @@ async def test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_s
     await _pass_time(hass, freezer, 23 * SAMPLES_PER_HOUR, hive_c=35.0)
     assert hass.states.get(TH_BROOD).state == "100"
     assert hass.states.get(TH_BROOD_BREAK).state == since.isoformat()
+
+
+async def test_GIVEN_brood_history_with_whole_number_sums_WHEN_set_up_THEN_hours_used(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verifies the type check accepts a whole number where a decimal is declared."""
+
+    freezer.move_to("2026-06-01T12:02:00+00:00")
+    current_hour = int(datetime(2026, 6, 1, 12, tzinfo=UTC).timestamp())
+    stored = _brood_history(
+        _stored_hours(current_hour, hive_c=35, outdoor_c=15)
+    )  # 420, not 420.0
+    hass.states.async_set(OUTDOOR_SENSOR, "59", OUTDOOR_FAHRENHEIT)
+    entry = _hive_entry(hass, hass_storage, {"version": 2, "minor_version": 1, "data": stored})
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(TH_BROOD).state == "100"
+    assert "could not be read" not in caplog.text
