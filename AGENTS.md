@@ -99,18 +99,24 @@ Home Assistant, not programmers.
 
 ## Brood estimate specification
 
-`BROOD_ESTIMATE.md` is the technical specification of the brood estimate: requirements,
-design decisions, formulas, constants, settings, repairs, persistence, and which tests verify
-which requirement. It's used for review and verification later, so it must match the code.
+`BROOD_ESTIMATE.md` is the technical specification of the brood estimate and the likely brood
+break: requirements, design decisions, formulas, constants, settings, repairs, persistence, and
+which tests verify which requirement. It's used for review and verification later, so it must
+match the code.
 
 - Update it in the same commit as any change to the brood estimate's behaviour: the algorithm
   or its constants, the outdoor temperature lookup, the settings, the Brood sensor and its
-  attributes, the repairs, storage, or which models get a brood estimate.
+  attributes, the likely brood break and its sensor, the repairs, storage, or which models get a
+  brood estimate.
 - When the algorithm or a constant changes, recompute the reference values table (section
-  6.8) with the scenarios in `tests/test_brood.py`.
-- Give new requirements and decisions the next free ID (`R16`, `D15`, ...) and don't renumber
+  6.8) with the scenarios in `tests/test_brood.py`, and the table of how they count for the
+  likely brood break (section 7.6).
+- Give new requirements and decisions the next free ID (`R27`, `D31`, ...) and don't renumber
   existing ones. When a decision is reversed, update it and record why.
-- Keep the verification table (section 14) in step with the tests: add new tests and rename
+- Every change to the format of the brood history file (`.storage/broodminder.brood.*`)
+  increases `BROOD_STORAGE_VERSION`, adds a migration from the previous version with a test,
+  and adds the version to the table in section 12.1. Don't use `minor_version` (D30).
+- Keep the verification table (section 15) in step with the tests: add new tests and rename
   renamed ones.
 - Unlike the README and changelog, write it for developers reviewing the code.
 
