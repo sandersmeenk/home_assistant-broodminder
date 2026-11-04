@@ -548,7 +548,8 @@ The resolved entity is shown in the sensor's `outdoor_entity` attribute.
 - A weather entity whose state (its condition) is `unknown` still gives its temperature.
 - The unit must be °C, °F or K, otherwise no value. The value is converted to °C with Home
   Assistant's `TemperatureConverter`.
-- A value that isn't a number (for example a sensor state `unknown`): no value.
+- A value that isn't a number (for example a sensor state `unknown`), or isn't finite (`nan`,
+  `inf`): no value.
 
 ### 8.3 Accuracy notes
 
@@ -707,7 +708,7 @@ Every change of the format adds a version to this table, with a migration from t
 | an older version | migrated version by version to the code's version, and written back at once (Home Assistant's `Store` does this after a migration). Version 1 becomes `hours`, with an empty `brood_break` (R24). |
 | a newer version, or another `minor_version` (a downgrade) | not used: clean brood history and a warning logged. The next save, at the first sample, replaces the file by a clean one in the code's version (R26). |
 | invalid JSON | Home Assistant's `Store` renames it to `<file>.corrupt.<time>`, logs an error and raises its own repair; clean brood history (R25) |
-| unexpected content (missing or wrong fields), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, D28) |
+| unexpected content (missing or wrong fields, or a value of the wrong type such as text or `null` for a number), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, D28) |
 
 Log texts:
 
@@ -875,7 +876,7 @@ Likely brood break and the brood history file:
 | R22, D26 | `test_GIVEN_gap_of_24_hours_WHEN_counting_THEN_count_continues`, `test_GIVEN_gap_over_24_hours_WHEN_counting_THEN_count_starts_over_and_break_kept` |
 | R23 | `test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped`, `test_GIVEN_47_low_estimates_stored_WHEN_hive_set_up_THEN_break_shown_and_kept_on_reload` |
 | R24, R26, D27 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated`, `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload` (version 2) |
-| R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object) |
+| R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object, `null` sum, text `since`) |
 | R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
 | R28, D32 | `test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_count_continues`, `test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over` (a brood history file as of a backup, with the hour in progress at its first sample) |

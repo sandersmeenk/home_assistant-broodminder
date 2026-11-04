@@ -2,6 +2,7 @@
 
 # ruff: noqa: PLR2004
 
+from dataclasses import asdict
 from datetime import UTC, datetime
 import time
 from typing import Any
@@ -31,6 +32,7 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
+from custom_components.broodminder.brood import BroodBreak
 from custom_components.broodminder.const import (
     BROOD_SAMPLE_INTERVAL,
     CONF_MODEL,
@@ -1093,8 +1095,13 @@ async def test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and
         {"hours": [{"hour": 0, "temperature": 35.0}], "brood_break": {}},
         {"hours": []},
         ["not", "an", "object"],
+        # NaN, which an earlier build could store, is written as null
+        _brood_history(
+            [{**_stored_hours(3600, hive_c=35.0, outdoor_c=15.0)[0], "outdoor_sum": None}]
+        ),
+        _brood_history([], {**asdict(BroodBreak()), "since": "yesterday"}),
     ],
-    ids=["wrong_fields", "missing_brood_break", "not_an_object"],
+    ids=["wrong_fields", "missing_brood_break", "not_an_object", "null_sum", "text_since"],
 )
 async def test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged(
     hass: HomeAssistant,

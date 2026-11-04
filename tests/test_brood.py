@@ -224,6 +224,10 @@ def test_GIVEN_stored_hours_WHEN_brood_window_THEN_last_24_complete_hours_with_b
         (State("weather.home", "unavailable", {}), None),
         (State("sensor.outdoor", "unavailable", {"unit_of_measurement": "°C"}), None),
         (State("sensor.outdoor", "unknown", {"unit_of_measurement": "°C"}), None),
+        # "nan" and "inf" parse as floats, but aren't temperatures
+        (State("sensor.outdoor", "nan", {"unit_of_measurement": "°C"}), None),
+        (State("sensor.outdoor", "inf", {"unit_of_measurement": "°C"}), None),
+        (State("weather.home", "sunny", {"temperature": "nan", "temperature_unit": "°C"}), None),
         # Without a temperature unit the value can't be trusted to be a temperature
         (State("sensor.outdoor", "20", {}), None),
         (None, None),
@@ -236,6 +240,9 @@ def test_GIVEN_stored_hours_WHEN_brood_window_THEN_last_24_complete_hours_with_b
         "weather_unavailable",
         "sensor_unavailable",
         "sensor_unknown",
+        "sensor_nan",
+        "sensor_infinite",
+        "weather_nan",
         "sensor_without_unit",
         "missing",
     ],

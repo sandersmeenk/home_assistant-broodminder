@@ -6,7 +6,8 @@ from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
 import logging
-from typing import Any
+import math
+from typing import Any, get_args, get_type_hints
 
 from homeassistant.components.weather import (
     ATTR_WEATHER_TEMPERATURE,
@@ -86,6 +87,8 @@ def outdoor_temperature_c(state: State | None) -> float | None:
         temperature = float(value)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(temperature):
+        return None  # "nan" and "inf" parse as floats, but would spoil the hour and the file
     return TemperatureConverter.convert(temperature, unit, UnitOfTemperature.CELSIUS)
 
 
@@ -108,6 +111,21 @@ async def async_remove_brood_history(hass: HomeAssistant, entry: ConfigEntry) ->
 
 def _storage_key(entry: ConfigEntry) -> str:
     return f"{DOMAIN}.brood.{entry.entry_id}"
+
+
+def _check_stored_types(stored: HourlyTemperatures | BroodBreak) -> None:
+    """Raise TypeError when a stored field doesn't have the type its dataclass declares."""
+    for name, hint in get_type_hints(type(stored)).items():
+        value = getattr(stored, name)
+        allowed = get_args(hint) or (hint,)  # int | None gives (int, NoneType)
+        if float in allowed:
+            allowed = (*allowed, int)  # JSON may write a whole float as an int
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, allowed)
+            or (isinstance(value, float) and not math.isfinite(value))
+        ):
+            raise TypeError(f"{type(stored).__name__}.{name} is {value!r}")
 
 
 class UnsupportedBroodHistoryError(Exception):
@@ -360,9 +378,12 @@ class BroodTracker:
         """Take the hours and brood break from stored data, or keep them empty."""
         if stored is None:
             return
-        hours = {data["hour"]: HourlyTemperatures(**data) for data in stored["hours"]}
-        self.brood_break = BroodBreak(**stored["brood_break"])
-        self._hours = hours
+        hours = [HourlyTemperatures(**data) for data in stored["hours"]]
+        brood_break = BroodBreak(**stored["brood_break"])
+        for item in (*hours, brood_break):
+            _check_stored_types(item)
+        self._hours = {hour.hour: hour for hour in hours}
+        self.brood_break = brood_break
 
     def _stored_data(self) -> dict[str, Any]:
         return {
