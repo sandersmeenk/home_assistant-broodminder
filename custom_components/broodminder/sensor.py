@@ -31,6 +31,7 @@ from .const import (
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATT,
+    SENSOR_CHARGE_REMAINING,
     SENSOR_HUM,
     SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
@@ -65,6 +66,11 @@ class BMDescriptions:
     )
     battery: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_BATT, icon="mdi:battery", device_class=SensorDeviceClass.BATTERY
+    )
+    charge_remaining: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_CHARGE_REMAINING,
+        icon="mdi:battery-clock",
+        device_class=SensorDeviceClass.BATTERY,
     )
     sample_count: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_SAMPLE_COUNT, icon="mdi:counter"
@@ -151,11 +157,18 @@ def sensor_update_to_bluetooth_data_update(
             SENSOR_TEMP_RT, entities[SENSOR_TEMP_RT], DESCRIPTIONS.temperature_rt, "Realtime Temp"
         )
 
-    # Humidity / Battery / sample count
+    # Humidity / Battery / Charge remaining / sample count
     if SENSOR_HUM in entities:
         add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity, "Humidity")
     if SENSOR_BATT in entities:
         add(SENSOR_BATT, entities[SENSOR_BATT], DESCRIPTIONS.battery, "Battery")
+    if SENSOR_CHARGE_REMAINING in entities:
+        add(
+            SENSOR_CHARGE_REMAINING,
+            entities[SENSOR_CHARGE_REMAINING],
+            DESCRIPTIONS.charge_remaining,
+            "Charge remaining",
+        )
     if SENSOR_SAMPLE_COUNT in entities:
         add(
             SENSOR_SAMPLE_COUNT,
@@ -253,7 +266,7 @@ class BroodMinderSensorEntity(
         key = self.entity_key.key
         if key in (SENSOR_TEMP, SENSOR_TEMP_RT):
             return UnitOfTemperature.CELSIUS
-        if key in (SENSOR_HUM, SENSOR_BATT):
+        if key in (SENSOR_HUM, SENSOR_BATT, SENSOR_CHARGE_REMAINING):
             return PERCENTAGE
         if key in (
             SENSOR_WEIGHT_L,
@@ -275,7 +288,7 @@ class BroodMinderSensorEntity(
             return SensorDeviceClass.TEMPERATURE
         if key == SENSOR_HUM:
             return SensorDeviceClass.HUMIDITY
-        if key == SENSOR_BATT:
+        if key in (SENSOR_BATT, SENSOR_CHARGE_REMAINING):
             return SensorDeviceClass.BATTERY
         if key in (
             SENSOR_WEIGHT_L,
@@ -300,6 +313,7 @@ class BroodMinderSensorEntity(
             SENSOR_TEMP_RT,
             SENSOR_HUM,
             SENSOR_BATT,
+            SENSOR_CHARGE_REMAINING,
             SENSOR_WEIGHT_L,
             SENSOR_WEIGHT_R,
             SENSOR_WEIGHT_L2,

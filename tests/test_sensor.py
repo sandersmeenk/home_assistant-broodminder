@@ -1,12 +1,15 @@
 """Tests for broodminder/sensor.py."""
 # ruff: noqa: PLR2004
 
+from homeassistant.components.sensor import SensorDeviceClass
 import pytest
 
 from custom_components.broodminder.ble_parser import parse_manufacturer_data
 from custom_components.broodminder.const import (
     MANUFACTURER,
     MANUFACTURER_ID,
+    SENSOR_BATT,
+    SENSOR_CHARGE_REMAINING,
     SENSOR_TEMP,
     SENSOR_TEMP_RT,
     SENSOR_WEIGHT_L,
@@ -85,6 +88,32 @@ def test_GIVEN_scale_w_57_WHEN_build_update_THEN_temperature_and_weight_have_pre
     assert precisions[SENSOR_WEIGHT_L2] == 2
     assert precisions[SENSOR_WEIGHT_R2] == 2
     assert precisions[SENSOR_WEIGHT_REALTIME] == 2
+
+
+def test_GIVEN_charge_remaining_byte_WHEN_build_update_THEN_only_charge_remaining() -> None:
+    """Verifies a charge remaining reading updates only the Charge remaining sensor."""
+
+    payload = bytearray(15)
+    payload[0] = 56  # model
+    payload[1] = 2  # v.minor
+    payload[2] = 1  # v.major
+    payload[4] = 110  # charge remaining: 100 + 40 / 4
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("11:22:33:44:55:66", adv)
+    assert parsed is not None
+
+    update = sensor_update_to_bluetooth_data_update(parsed)
+    values = {key.key: value for key, value in update.entity_data.items()}
+    names = {key.key: name for key, name in update.entity_names.items()}
+    descriptions = {
+        key.key: description for key, description in update.entity_descriptions.items()
+    }
+
+    assert SENSOR_BATT not in values
+    assert values[SENSOR_CHARGE_REMAINING] == 40
+    assert names[SENSOR_CHARGE_REMAINING] == "Charge remaining"
+    assert descriptions[SENSOR_CHARGE_REMAINING].device_class == SensorDeviceClass.BATTERY
 
 
 @pytest.mark.parametrize(

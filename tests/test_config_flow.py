@@ -420,3 +420,44 @@ async def test_GIVEN_th_sensor_WHEN_too_short_advertisement_arrives_THEN_sensors
 
     assert hass.states.get(temperature).state == "25.0"
     assert "Unexpected error" not in caplog.text
+
+
+async def test_GIVEN_th_sensor_WHEN_charge_remaining_and_invalid_values_arrive_THEN_battery_kept(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies battery and charge remaining only change on their own readings."""
+
+    def th_payload(battery: int) -> bytes:
+        payload = _payload(model=56, battery=battery, temp_c=25.0)
+        payload[14] = 55  # humidity
+        return bytes(payload)
+
+    battery = "sensor.broodminder_th_00_00_01_battery"
+    charge_remaining = "sensor.broodminder_th_00_00_01_charge_remaining"
+
+    # Voltage based battery: no charge remaining entity yet
+    await _setup_device(hass, TH_ADDRESS, th_payload(battery=90))
+    assert hass.states.get(battery).state == "90"
+    assert hass.states.get(charge_remaining) is None
+
+    # Charge remaining 100 + 40 / 4: battery keeps its last value
+    _inject(hass, TH_ADDRESS, th_payload(battery=110))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert hass.states.get(battery).state == "90"
+    state = hass.states.get(charge_remaining)
+    assert state.state == "40"
+    assert state.attributes["unit_of_measurement"] == "%"
+    assert state.attributes["device_class"] == "battery"
+    assert state.attributes["state_class"] == "measurement"
+
+    # Voltage based battery again: charge remaining keeps its last value
+    _inject(hass, TH_ADDRESS, th_payload(battery=80))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert hass.states.get(battery).state == "80"
+    assert hass.states.get(charge_remaining).state == "40"
+
+    # Invalid value above 125: neither changes
+    _inject(hass, TH_ADDRESS, th_payload(battery=200))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert hass.states.get(battery).state == "80"
+    assert hass.states.get(charge_remaining).state == "40"

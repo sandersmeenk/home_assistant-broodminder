@@ -98,6 +98,7 @@ SENSOR_TEMP = "temperature"
 SENSOR_TEMP_RT = "temperature_realtime"
 SENSOR_HUM = "humidity"
 SENSOR_BATT = "battery"
+SENSOR_CHARGE_REMAINING = "charge_remaining"
 
 SENSOR_SAMPLE_COUNT = "sample_count"
 SENSOR_WEIGHT_L = "weight_left"
@@ -131,5 +132,10 @@ SWARM_STATE_DESCRIPTION_UNKNOWN = "Unknown"
 
 SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100
+
+# Newer firmware sends charge remaining (runtime based) in the battery byte as 100 + percent / 4
+CHARGE_REMAINING_RAW_MINIMUM = 101
+CHARGE_REMAINING_RAW_MAXIMUM = 125
+CHARGE_REMAINING_RAW_SCALE = 4
 
 MANUFACTURER = "BroodMinder"
