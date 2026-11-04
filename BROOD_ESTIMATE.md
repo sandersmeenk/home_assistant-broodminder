@@ -154,7 +154,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | R19 | A likely brood break ends once the Brood % has been above the end level for 24 hourly estimates in a row. The end level is higher than the low threshold. |
 | R20 | The low threshold and the end level depend on the sensor position (R11). They are constants, not settings. |
 | R21 | Any low period counts, in any season, including the gradual autumn decline into the winter break. |
-| R22 | Hours without an estimate neither count nor reset. After more than 24 hours without an estimate, a count in progress (R18, R19) starts over; a likely brood break that has started is kept. |
+| R22 | Hours without an estimate neither count nor reset. After an outage without data of a day or longer with Home Assistant off, or of more than 30 hours with it running, a count in progress (R18, R19) starts over; a likely brood break that has started is kept. Between estimates this is more than 42 hours: the next estimate waits until the window has 18 hours again ([7.4](#74-rule)). |
 | R23 | A likely brood break and the counts in progress survive a restart of Home Assistant and a reload of the hive. Each hourly estimate counts once, also across a restart. |
 | R24 | A brood history file written by a development build of 0.5.0 (storage version 1) is migrated, keeping its hours. |
 | R25 | A brood history file that can't be used (a newer version, invalid JSON, unexpected content or a failing migration) doesn't stop the hive from setting up: the hive starts with a clean brood history and a warning is logged (for invalid JSON, Home Assistant's own repair). |
@@ -205,7 +205,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | D23 | Confirm after 48 hourly estimates; show the time of the first | One estimate already covers 24 hours; two more days keep a cold spell, an inspection or a contracted cluster from starting a break. Showing the first low estimate counts the days from the drop rather than from the confirmation. The first low estimate rather than the start of its 24-hour window: by then the drop is measured, so a break is never shown as longer than the data says. | 24 estimates (false breaks); 72 (a day later for a real break); the time of confirmation (always 2 days late); the start of the first low estimate's window (up to 24 hours too early). |
 | D24 | End at a higher level, held for 24 hours | The gap between the low threshold and the end level, and the 24 hours, keep a brief warm spell from ending a break and starting it again with a new start time. | End at the first estimate above the low threshold. |
 | D25 | Any low period counts | The gradual autumn decline into the winter break is the classic time for an oxalic acid trickle. Requiring brood shortly before would miss it, and a hive set up during a break. | Count only a drop after a period with brood (for example 50% or more in the 2 weeks before). |
-| D26 | Gaps hold, but a count in progress starts over after more than 24 hours | Short gaps (a restart, an outdoor temperature outage, the hive briefly out of range) shouldn't reset anything. After a long gap (Home Assistant off, the hive moved, another version installed for a while), a count would join hours weeks apart: 30 low hours, 3 weeks away, then 18 low hours would start a break backdated by 3 weeks. A normal restart has no gap at all (D16). A break that has started is kept, and after a gap ends the normal way (R19). | Hold everything across any gap; reset everything after 3 days without estimates, including a break that has started (loses the start of a real break). |
+| D26 | Gaps hold, but a count in progress starts over after an outage of a day | Short gaps (a restart, an outdoor temperature outage, the hive briefly out of range) shouldn't reset anything. After a long gap (Home Assistant off, the hive moved, another version installed for a while), a count would join hours weeks apart: 30 low hours, 3 weeks away, then 18 low hours would start a break backdated by 3 weeks. A normal restart has no gap at all (D16). A break that has started is kept, and after a gap ends the normal way (R19). The rule measures the time between two estimates, which is longer than the outage: estimates stop once fewer than 18 hours of the window have data, and return only when 18 new hours have arrived (R4). So `gap_max` is 42 hours, an outage of 24 hours plus the 18 hours to refill the window. It was 24 hours at first, which reset a count after an outage of 7 hours with Home Assistant off (13 hours with it running), such as an update that failed overnight: a short gap treated as a long one. | Hold everything across any gap; reset everything after 3 days without estimates, including a break that has started (loses the start of a real break); 24 hours between estimates (resets after a 7-hour outage); measure from the last hour with data (the same 24 hours for every kind of outage, but another stored field and storage version, for outages of 24 to 30 hours only). |
 | D27 | Store the likely brood break in the brood history file, as storage version 2 | One file and one write an hour, as before. Version 1 was only written by development builds of 0.5.0, so the migration only matters there; 0.4.0 and earlier never read the file ([12.4](#124-compatibility-between-versions)). | A second file per hive: no migration and any build can be installed and reverted, but a second write every hour per hive. |
 | D28 | A brood history file that can't be read or migrated starts empty | Home Assistant's `Store` raises on a storage version it can't migrate, and the tracker loads the file during the hive's setup, so all the hive's sensors failed to set up, not just Brood. Losing up to 48 hours and the break state costs less. Protects every later change of the file format, for example when going back to an older version. | Fail the setup, as before. |
 | D29 | Write the Likely brood break since state only when it changes | The tracker calls its listeners every 5 minutes. For the Brood sensor that refreshes the recorder row's last-reported time each time ([12.2](#122-other-storage)). The break changes a few times a year, so writing only on change leaves the recorder idle. | Write on every sample, like the Brood sensor. |
@@ -418,7 +418,7 @@ The estimate changes once an hour, so there is at most one input an hour.
 | `p_end` | `BROOD_BREAK_END_PERCENT` | 45% on top of the frames, 30% in the comb | Above this, an estimate counts towards the end of a break |
 | `n_start` | `BROOD_BREAK_START_HOURS` | 48 | Low estimates that start a break |
 | `n_end` | `BROOD_BREAK_END_HOURS` | 24 | Estimates in a row above `p_end` that end a break |
-| `gap_max` | `BROOD_BREAK_MAX_GAP_HOURS` | 24 hours | A longer time between two estimates restarts a count in progress |
+| `gap_max` | `BROOD_BREAK_MAX_GAP_HOURS` | 42 hours (`BROOD_WINDOW_HOURS` + `BROOD_MIN_HOURS`) | A longer time between two estimates restarts a count in progress: an outage of a day, plus the 18 hours the window needs to refill (D26) |
 
 ### 7.3 State
 
@@ -469,6 +469,13 @@ else:                                                 likely break
   apply from the next estimate; the state is kept.
 - The rule only uses the successive estimates and their times, not the clock, so replaying
   exported history gives the same result as running live.
+- An outage of `G` hours without data makes a longer gap between estimates. With Home Assistant
+  off, the window still has `24 − G` hours when it starts again: up to `G` = 6 an estimate comes
+  at once, and after a longer outage only once 18 new hours have arrived, `G + 19` hours after
+  the last one (the last estimate before the outage doesn't include its own hour). With Home
+  Assistant running, estimates continue from the hours left in the window for the first 6 hours,
+  so the gap is `G + 12`. With `gap_max` = 42, a count continues after an outage of up to 23
+  hours with Home Assistant off and 30 hours with it running (R22, D26).
 
 ### 7.5 Worked example
 
@@ -761,7 +768,7 @@ changing versions does to the brood history and the entities:
 |---|---|
 | Development build of 0.5.0 → 0.5.0 | The version 1 file is migrated: hours kept, no likely brood break, counts start at 0 (R24). |
 | 0.5.0 → 0.4.0 or earlier | Those versions don't read the brood file; it stays as it is. Home Assistant shows the Brood and Likely brood break since sensors as no longer provided by the integration; their history and the Brood statistics stay in the recorder. **Configure** disappears, the settings and the stored model stay in the config entry, and the brood repairs go (they aren't persistent). Removing a hive leaves its brood file behind. |
-| 0.4.0 or earlier → 0.5.0 again | Entities and settings return. Hours older than 48 hours are dropped, so Brood shows unknown for about 18 hours. A likely brood break that had started is kept and ends the normal way; a count in progress starts over (D26). |
+| 0.4.0 or earlier → 0.5.0 again | Entities and settings return. If the other version ran for more than about 6 hours, Brood shows unknown for about 18 hours; hours older than 48 hours are dropped. A likely brood break that had started is kept and ends the normal way. A count in progress continues if the other version ran for less than a day, and otherwise starts over (R22, D26). |
 | 0.5.0 → a development build that writes version 1 | That build can't read version 2 and predates R25: the hive fails to set up, with all its sensors. Install 0.5.0 again, or remove `.storage/broodminder.brood.<config entry id>`. |
 | Any older version → a later one, skipping releases in between | The file is migrated through the formats of the skipped releases in one go: hours and likely brood break kept, as if each release had been installed in turn (R29, D33). |
 | A later version with a newer format → 0.5.0 | Detected by the version in the file: the hive sets up with a clean brood history, logs a warning and replaces the newer file (R26). |
@@ -800,8 +807,9 @@ backup, and the hives are recognised by their Bluetooth address.
 
 | Age of the backup at the restore | Brood | Likely brood break since |
 |---|---|---|
-| Up to about 6 hours | An estimate at once from the backup's hours still in the window (at least 18); `hours_used` is lower until new hours fill the window | As in the backup. The estimate at setup comes less than 24 hours after the backup's last one, so counts in progress continue (R22). |
-| Older | Unknown with `not_enough_data` for about 18 hours: the backup's hours leave the window as fast as new hours arrive | A break that had started is kept and ends the normal way (R19). The next estimate comes more than 24 hours after the backup's last one, so a count in progress starts over (R22, D26). |
+| Up to about 6 hours | An estimate at once from the backup's hours still in the window (at least 18); `hours_used` is lower until new hours fill the window | As in the backup. The estimate at setup comes less than 42 hours after the backup's last one, so counts in progress continue (R22). |
+| About 6 to 24 hours | Unknown with `not_enough_data` for about 18 hours: the backup's hours leave the window as fast as new hours arrive | As in the backup. The first estimate, once 18 new hours have arrived, comes at most 42 hours after the backup's last one, so counts in progress continue (R22). |
+| Older | Unknown with `not_enough_data` for about 18 hours, as above | A break that had started is kept and ends the normal way (R19). The first estimate comes more than 42 hours after the backup's last one, so a count in progress starts over (R22, D26). |
 
 A backup made before a hive was added doesn't contain it: the hive is discovered again as a new
 hive, with an empty brood history. A backup made with 0.4.0 or earlier restores that version,
@@ -881,7 +889,7 @@ Likely brood break and the brood history file:
 | R17, R18, R21, rule ([7.4](#74-rule)) | `test_GIVEN_48_low_estimates_WHEN_break_rule_THEN_break_since_first_low_estimate`, `test_GIVEN_47_low_estimates_WHEN_break_rule_THEN_no_break`, `test_GIVEN_estimate_above_low_WHEN_counting_low_THEN_count_starts_over`, `test_GIVEN_47_low_estimates_WHEN_next_hour_completes_low_THEN_break_shown` |
 | R19, D24 | `test_GIVEN_break_WHEN_24_estimates_above_end_level_THEN_break_ends`, `test_GIVEN_break_WHEN_estimates_between_low_and_end_level_THEN_break_continues` |
 | R20, D22, [7.6](#76-how-the-reference-scenarios-count) | `test_GIVEN_reference_scenarios_WHEN_break_thresholds_THEN_count_as_specified`, `test_GIVEN_in_comb_position_WHEN_break_rule_THEN_its_thresholds_apply` |
-| R22, D26 | `test_GIVEN_gap_of_24_hours_WHEN_counting_THEN_count_continues`, `test_GIVEN_gap_over_24_hours_WHEN_counting_THEN_count_starts_over_and_break_kept` |
+| R22, D26 | `test_GIVEN_gap_of_42_hours_WHEN_counting_THEN_count_continues`, `test_GIVEN_gap_over_42_hours_WHEN_counting_THEN_count_starts_over_and_break_kept`, `test_GIVEN_outage_under_a_day_WHEN_estimates_return_THEN_count_continues`, `test_GIVEN_outage_of_a_day_WHEN_estimates_return_THEN_count_starts_over` (Home Assistant off and running) |
 | R23 | `test_GIVEN_estimate_already_counted_WHEN_break_rule_THEN_skipped`, `test_GIVEN_47_low_estimates_stored_WHEN_hive_set_up_THEN_break_shown_and_kept_on_reload` |
 | R24, R26, R29, D27, D33 | `test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrated`, `test_GIVEN_hive_sampling_WHEN_hour_completes_THEN_hours_stored_without_unload` (version 2; version 1 is the only older version so far) |
 | R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object) |
@@ -889,7 +897,7 @@ Likely brood break and the brood history file:
 | R31, D34 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (`null` sum, text `since`, `true` count), `test_GIVEN_brood_history_with_whole_number_sums_WHEN_set_up_THEN_hours_used` |
 | R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
-| R28, D32 | `test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_count_continues`, `test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over` (a brood history file as of a backup, with the hour in progress at its first sample) |
+| R28, D32 | `test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_count_continues`, `test_GIVEN_backup_20_hours_old_WHEN_restored_THEN_count_continues_once_window_refills`, `test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over` (a brood history file as of a backup, with the hour in progress at its first sample) |
 
 Not covered by automated tests: N1 to N4 (by review), the startup guard of the shared repair
 (D12), a brood history file with invalid JSON (handled by Home Assistant's `Store`, which the
@@ -937,8 +945,8 @@ range:
 - The estimate lags up to an hour, because only complete hours are used.
 - A new hive, or one whose history was lost, needs about 18 hours before the first value.
 - After restoring a backup more than about 6 hours old, the Brood sensor shows unknown for about
-  18 hours, and a count in progress towards starting or ending a likely brood break starts over
-  ([12.5](#125-backup-and-restore)). A backup doesn't contain the samples of the hour in progress
+  18 hours. If the backup is more than a day old, a count in progress towards starting or ending
+  a likely brood break also starts over ([12.5](#125-backup-and-restore)). A backup doesn't contain the samples of the hour in progress
   (D32).
 - The automatic outdoor temperature is a forecast for the home location; accuracy depends on the
   home elevation, and distant apiaries need a local sensor.
