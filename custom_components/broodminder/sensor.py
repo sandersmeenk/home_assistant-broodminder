@@ -26,6 +26,7 @@ from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceIn
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
 
 from . import BroodMinderData
 from .ble_parser import ManufacturerData, device_name, extract_entities, model_name
@@ -47,6 +48,7 @@ from .const import (
     MANUFACTURER,
     SENSOR_BATT,
     SENSOR_BROOD,
+    SENSOR_BROOD_BREAK,
     SENSOR_HUM,
     SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
@@ -126,6 +128,11 @@ class BMDescriptions:
         icon="mdi:hexagon-multiple",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
+    )
+    brood_break: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_BROOD_BREAK,
+        icon="mdi:hexagon-multiple-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
     )
 
 
@@ -251,33 +258,38 @@ async def async_setup_entry(
     entry.async_on_unload(data.coordinator.async_register_processor(processor))
 
     if data.brood_tracker is not None:
+        address, model = data.coordinator.address, entry.data[CONF_MODEL]
         async_add_entities(
             [
-                BroodMinderBroodSensor(
-                    data.brood_tracker, data.coordinator.address, entry.data[CONF_MODEL]
-                )
+                BroodMinderBroodSensor(data.brood_tracker, address, model),
+                BroodMinderBroodBreakSensor(data.brood_tracker, address, model),
             ]
         )
 
 
-class BroodMinderBroodSensor(SensorEntity):
-    """Brood estimate of a hive, from its temperature and the outdoor temperature."""
+class BroodTrackerSensor(SensorEntity):
+    """Sensor on a hive's device whose value comes from the hive's brood tracker."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_name = "Brood"
-    entity_description = DESCRIPTIONS.brood
 
     def __init__(self, tracker: BroodTracker, address: str, model: int) -> None:
         """Initialize the sensor on the hive's device, also before it has advertised."""
         self._tracker = tracker
-        self._attr_unique_id = f"{address}-{SENSOR_BROOD}"
+        self._attr_unique_id = f"{address}-{self.entity_description.key}"
         self._attr_device_info = DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, address)},
             manufacturer=MANUFACTURER,
             name=device_name(address, model),
             model=model_name(model),
         )
+
+
+class BroodMinderBroodSensor(BroodTrackerSensor):
+    """Brood estimate of a hive, from its temperature and the outdoor temperature."""
+
+    _attr_name = "Brood"
+    entity_description = DESCRIPTIONS.brood
 
     async def async_added_to_hass(self) -> None:
         """Update the state after every sample."""
@@ -300,6 +312,34 @@ class BroodMinderBroodSensor(SensorEntity):
             ATTR_OUTDOOR_ENTITY: self._tracker.outdoor_entity_id,
             ATTR_SENSOR_POSITION: self._tracker.position,
         }
+
+
+class BroodMinderBroodBreakSensor(BroodTrackerSensor):
+    """When a hive's likely brood break started, or unknown without one."""
+
+    _attr_name = "Likely brood break since"
+    entity_description = DESCRIPTIONS.brood_break
+
+    def __init__(self, tracker: BroodTracker, address: str, model: int) -> None:
+        """Initialize the sensor with the brood break the tracker loaded."""
+        super().__init__(tracker, address, model)
+        self._attr_native_value = self._since()
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the tracker's samples."""
+        self.async_on_remove(self._tracker.async_add_listener(self._async_sampled))
+
+    @callback
+    def _async_sampled(self) -> None:
+        """Write the state only when a break starts or ends, so the recorder stays idle."""
+        since = self._since()
+        if since != self._attr_native_value:
+            self._attr_native_value = since
+            self.async_write_ha_state()
+
+    def _since(self) -> datetime | None:
+        since = self._tracker.brood_break.since
+        return None if since is None else dt_util.utc_from_timestamp(since)
 
 
 def _create_entity(

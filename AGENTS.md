@@ -12,12 +12,15 @@ BroodMinder beehive sensors from Bluetooth LE advertisements. It's distributed v
   - `config_flow.py` — Bluetooth discovery flow, one config entry per device address, and the
     per-hive brood settings (options flow)
   - `sensor.py` — maps parsed data to sensor entities via HA's passive Bluetooth processor,
-    plus the Brood sensor
-  - `brood.py` — brood estimate algorithm, without Home Assistant dependencies
-  - `brood_tracker.py` — per-hive sampling, outdoor temperature lookup, storage and repairs for
-    the brood estimate
-  - `const.py` — payload indices, model IDs, entity keys and brood estimate constants
-- `BROOD_ESTIMATE.md` — technical specification of the brood estimate (see below)
+    plus the Brood and Likely brood break since sensors
+  - `brood.py` — brood estimate and likely brood break algorithms, without Home Assistant
+    dependencies
+  - `brood_tracker.py` — per-hive sampling, outdoor temperature lookup, storage (versioned, with
+    migrations) and repairs for the brood estimate and likely brood break
+  - `const.py` — payload indices, model IDs, entity keys, brood estimate and brood break
+    constants
+- `BROOD_ESTIMATE.md` — technical specification of the brood estimate and likely brood break
+  (see below)
 - `tests/` — pytest suite
 - `scripts/` — developer scripts (see below)
 - `config/` — local Home Assistant config for `scripts/develop`; only
@@ -111,7 +114,7 @@ match the code.
 - When the algorithm or a constant changes, recompute the reference values table (section
   6.8) with the scenarios in `tests/test_brood.py`, and the table of how they count for the
   likely brood break (section 7.6).
-- Give new requirements and decisions the next free ID (`R27`, `D31`, ...) and don't renumber
+- Give new requirements and decisions the next free ID (`R27`, `D32`, ...) and don't renumber
   existing ones. When a decision is reversed, update it and record why.
 - Every change to the format of the brood history file (`.storage/broodminder.brood.*`)
   increases `BROOD_STORAGE_VERSION`, adds a migration from the previous version with a test,
