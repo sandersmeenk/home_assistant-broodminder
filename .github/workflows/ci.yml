@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install ruff
+        # Same version as requirements.txt, without installing Home Assistant
+        run: python -m pip install "$(grep '^ruff==' requirements.txt)"
+      - run: scripts/lint ci
+
+  pytest:
+    name: Pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install system packages
+        # Same as the devcontainer
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+      - run: scripts/setup
+      - run: pytest --cov=custom_components/broodminder --cov-branch --cov-report=term

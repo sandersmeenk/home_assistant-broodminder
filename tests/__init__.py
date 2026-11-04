@@ -1,1 +1,1 @@
-# empty on purpose
+"""Tests for the BroodMinder integration."""

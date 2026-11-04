@@ -60,6 +60,7 @@ split-on-trailing-comma = false
 "tests/**/*.py" = [
     "S101",  # Allow assert in tests
     "INP001",  # Don't complain over missing __init__.py in test dirs
+    "N802",  # Allow GIVEN/WHEN/THEN casing in test names
 ]
 "scripts/*" = [
     "D103",  # Don't complain over missing docstrings in scripts

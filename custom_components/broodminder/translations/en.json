@@ -1,6 +1,8 @@
 {
   "config": {
+    "step": {},
     "abort": {
+      "already_configured": "Device is already configured.",
       "not_broodminder": "Not a BroodMinder device."
     }
   }

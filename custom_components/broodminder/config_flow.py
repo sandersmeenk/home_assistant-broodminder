@@ -1,3 +1,5 @@
+"""Config flow for the BroodMinder integration."""
+
 from __future__ import annotations
 
 from homeassistant import config_entries

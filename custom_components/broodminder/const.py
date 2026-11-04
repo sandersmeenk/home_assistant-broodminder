@@ -1,7 +1,5 @@
 """Constants for the BroodMinder integration."""
 
-from typing import Iterable
-
 DOMAIN = "broodminder"
 
 MANUFACTURER_ID = 0x028D  # IF, LLC (BroodMinder)
@@ -16,7 +14,9 @@ IDX_VER_MAJOR = 2
 IDX_RT_TEMP1_L = 3
 # Battery %
 IDX_BATTERY = 4  # byte 14 overall
-# Elapsed (little-endian)
+# Shortest payload we accept: model, version and battery must be present
+MIN_PAYLOAD_LEN = IDX_BATTERY + 1
+# Elapsed seconds, little-endian
 IDX_ELAPSED_L = 5  # byte 15 overall
 IDX_ELAPSED_H = 6  # byte 16 overall
 # Primary temperature (centi°C + 5000 for most models; SHT-like for 41/42/43)
@@ -46,8 +46,9 @@ MODEL_TH = {42, 56}
 MODEL_W = {43, 57}
 MODEL_W3_W4 = {49}
 MODEL_SUBHUB = {52}
-MODEL_HUB = {54}
+MODEL_HUB_4G = {54}
 MODEL_DIY = {58}
+MODEL_HUB_WIFI = {60}
 MODEL_BEEDAR = {63}
 
 # Models with SHT-like temperature formula:
@@ -56,15 +57,37 @@ SPECIAL_TEMP_MODELS_F = {41, 42, 43}
 # Models without humidity in adv payload:
 NO_HUMIDITY_MODELS = {41, 47, 49, 52}
 
+# Models with weight channels in adv payload:
+SCALE_MODELS = MODEL_W | MODEL_W3_W4 | MODEL_DIY
+
+# Models with realtime temperature and realtime total weight (docs: "SM & XLR"):
+REALTIME_MODELS = {47, 49, 56, 57, 58}
+
+# Models with extra weight channels instead of SM time (docs: "XLR"):
+EXTRA_WEIGHT_MODELS = {49, 57, 58}
+
+# Scale W (43) sends no total: it measures half the hive, so total = 2 x (left + right)
+CALCULATED_TOTAL_WEIGHT_MODELS = {43}
+HALF_HIVE_WEIGHT_FACTOR = 2
+
+# Raw temperature value without a reading
+TEMP_RAW_INVALID = 0xFFFF
+
+# Raw weight values without a reading
+WEIGHT_RAW_NO_READING = 0xFFFF
+# Raw 0x7FFF is 0.00 kg, but on an extra weight channel it means no load cell is connected
+WEIGHT_RAW_NOT_CONNECTED = 0x7FFF
+
 # Model names
 MODELS: dict[str, set[int]] = {
     "T": MODEL_T,
     "TH": MODEL_TH,
-    "W": MODEL_W,
-    "W3_W4": MODEL_W3_W4,
+    "Scale W": MODEL_W,
+    "Scale W3/W4": MODEL_W3_W4,
     "SubHub": MODEL_SUBHUB,
-    "Hub": MODEL_HUB,
+    "Hub 4G": MODEL_HUB_4G,
     "DIY": MODEL_DIY,
+    "Hub Wifi": MODEL_HUB_WIFI,
     "BeeDar": MODEL_BEEDAR,
 }
 
@@ -84,6 +107,27 @@ SENSOR_WEIGHT_R2 = "weight_right_2"
 SENSOR_WEIGHT_REALTIME = "weight_realtime_total"
 SENSOR_SWARM_STATE = "swarm_state"
 SENSOR_SWARM_TIME = "swarm_time"  # may be time since boot if not synced
+# Older swarm times are time since boot: the clock was never set by a Bees app sync
+SWARM_TIME_MIN_VALID_UNIX = 1420070400  # 2015-01-01T00:00:00Z
+
+# Swarm state attribute: human readable SwarmMinder state
+ATTR_DESCRIPTION = "description"
+# From https://doc.mybroodminder.com/31_sensors_T_TH, "SwarmMinder Details"
+SWARM_STATE_DESCRIPTIONS: dict[int, str] = {
+    0: "Stopped",
+    1: "Stopped - initialization complete",
+    2: "Stopped - by stop request",
+    20: "Started - checking for swarm event",
+    21: "Started - buffering temperature data",
+    22: "Started - temperature < hive base temperature (32.5C, 90.5F)",
+    25: "Started - buffered hive temperature < hive base temperature",
+    29: "Swarm event detected",
+    40: "Swarm event detected - start logging",
+    41: "Swarm event detected - still logging swarm data",
+    60: "Swarm event logging complete - start waiting - swarm detection",
+    61: "Swarm event logging complete - still waiting",
+}
+SWARM_STATE_DESCRIPTION_UNKNOWN = "Unknown"
 
 SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100

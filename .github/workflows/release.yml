@@ -1,0 +1,47 @@
+name: Release
+
+# Publishes a GitHub release with the version's CHANGELOG.md section as release notes.
+# HACS shows these notes in Home Assistant when an update is offered.
+
+on:
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to (re)publish, e.g. 0.3.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # On a tag push this checks out the tag; on a manual run the branch it runs from,
+      # so older tags that predate CHANGELOG.md get their notes from the current changelog
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Extract release notes
+        run: scripts/release_notes.py "$TAG" > release_notes.md
+      - name: Publish release
+        run: |
+          # Only the highest version is marked latest, so republishing an old one doesn't
+          # make HACS offer it as an update
+          highest=$(git tag -l '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          latest=$([ "$TAG" = "$highest" ] && echo true || echo false)
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file release_notes.md --latest="$latest"
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release_notes.md \
+              --latest="$latest"
+          fi

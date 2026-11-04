@@ -2,3 +2,5 @@ pytest
 pytest-asyncio
 pytest-mock
 pytest-cov
+# Must match the homeassistant version in requirements.txt (0.13.281 ↔ 2025.9.4)
+pytest-homeassistant-custom-component==0.13.281
