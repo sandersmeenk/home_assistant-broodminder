@@ -159,6 +159,8 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | R24 | A brood history file written by a development build of 0.5.0 (storage version 1) is migrated, keeping its hours. |
 | R25 | A brood history file that can't be used (a newer version, invalid JSON, unexpected content or a failing migration) doesn't stop the hive from setting up: the hive starts with a clean brood history and a warning is logged (for invalid JSON, Home Assistant's own repair). |
 | R26 | The brood history file carries its format version. Every change of the format increases it. A file with an older version is migrated to the current one; a file with a newer version, left by a later version of the integration before a downgrade, is replaced by a clean file. |
+| R27 | A Home Assistant backup contains all data the brood estimate and the likely brood break need to continue: each hive's brood history (its hours and likely brood break), its settings and model, and the integration itself, also in a backup without the database. The brood history is in the state of its last hourly save: the samples taken since then, at most an hour's, aren't in the backup (D32). |
+| R28 | Restoring a Home Assistant backup restores each hive's brood history as it was in the backup. The brood estimate and the likely brood break then continue from it as if Home Assistant had been off from the backup until the restore: the backup's hours still in the window count at once (D16), and the time in between is a gap as in R22. |
 
 ### 3.2 Non-functional
 
@@ -184,7 +186,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | D7 | Lower bound depends on the sensor position: 30 °C on top of the frames, 32 °C in the comb | In simulation the in-comb bound of 32 °C (bottom of the brood range) separates a brood break much better (8% instead of 26%). On top of the frames the temperature runs cooler, so 30 °C fits. | One bound for all placements: one of the two groups gets worse numbers. |
 | D8 | Use the hive's last temperature while the hive is in range | Home Assistant drops advertisements whose data hasn't changed, so the time of the last update doesn't show whether the hive is still there. The coordinator's availability does. | Require an advertisement within the last 15 minutes. |
 | D9 | Store the model id in the config entry | The Brood sensor and settings can then exist before the hive advertises, and `async_supports_options_flow` doesn't need a device registry lookup. | Look up the model in the device registry. |
-| D10 | Own storage file with hourly sums | Works whether or not the recorder records the hive's sensors, is simple to test and stays small. | Rebuild the window from the recorder's history at startup. |
+| D10 | Own storage file with hourly sums | Works whether or not the recorder records the hive's sensors, is simple to test and stays small. As a `Store` file in `.storage/` it is in every Home Assistant backup, also one without the database (R27). | Rebuild the window from the recorder's history at startup. |
 | D11 | Store the hours once an hour, when an hour completes | The first implementation used a 15-minute delayed save, but Home Assistant's delayed save is a debounce: calls every 5 minutes kept postponing it, so nothing reached disk until a clean stop. Saving per completed hour loses at most the hour in progress. | Save on every sample (12 writes an hour); save only at shutdown (loses data on a crash). |
 | D12 | The shared repair waits until Home Assistant is fully started (`CoreState.running`) | Other integrations' weather entities may not exist during startup; avoids a false repair at every restart. `hass.is_running` is not enough: it is also true while starting. | Raise at once at setup. |
 | D13 | Hive input is the *Temperature* field, not *Realtime Temp* | Temperature is sent by all T and TH models; Realtime Temp only by models 47 and 56. Hourly averaging makes the difference irrelevant. | Realtime Temp where available. |
@@ -206,6 +208,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | D29 | Write the Likely brood break since state only when it changes | The tracker calls its listeners every 5 minutes. For the Brood sensor that refreshes the recorder row's last-reported time each time ([12.2](#122-other-storage)). The break changes a few times a year, so writing only on change leaves the recorder idle. | Write on every sample, like the Brood sensor. |
 | D30 | Every format change increases the major storage version; `minor_version` stays 1 | The version in the file is what makes migrations and downgrade detection possible (R26). Home Assistant's `Store` treats a file with the same major and another minor version as readable by any code with that major version, and uses it as it is. That only works for changes older code can ignore, and older code would drop the new fields at its next save without noticing. With one major version per change, every downgrade is detected and handled the same way. A newer file isn't kept as a backup: it holds at most 48 hours and the break state. | Minor versions for changes older code can ignore; keeping the newer file as a backup on a downgrade. |
 | D31 | Likely brood break since is enabled by default, as a main sensor without entity category | It is the reason for the feature, and a disabled entity is easy to miss: users would have to find and enable it on every hive. While nothing changes it costs nothing (D29). Beekeepers who don't need it can disable it. | Disabled by default; the diagnostic entity category. |
+| D32 | No backup platform: a backup holds the brood history of the last hourly save | Home Assistant saves no integration's storage before a backup; it only calls `async_pre_backup` of integrations with a `backup` platform. Without one, the backup lacks the samples since the last hourly save, at most 11. The hour in progress is in the backup with its first sample (the save comes after it, [5.1](#51-sampling)), so it still counts, from fewer samples. A restore loses the whole time between the backup and the restore, usually hours or days, so these minutes add little. | A `backup` platform whose `async_pre_backup` saves every hive's brood history, so the backup has the hour in progress: one more module and one more write per hive and backup. |
 
 ## 5. Data collection
 
@@ -754,6 +757,48 @@ changing versions does to the brood history and the entities:
 | 0.5.0 → a development build that writes version 1 | That build can't read version 2 and predates R25: the hive fails to set up, with all its sensors. Install 0.5.0 again, or remove `.storage/broodminder.brood.<config entry id>`. |
 | A later version with a newer format → 0.5.0 | Detected by the version in the file: the hive sets up with a clean brood history, logs a warning and replaces the newer file (R26). |
 
+### 12.5 Backup and restore
+
+A Home Assistant backup (the `backup` integration, or Supervisor on Home Assistant OS) archives
+the whole configuration directory. It leaves out only logs, `tts/`, `__pycache__`, earlier
+backups and, when the backup is made without it, the database (`EXCLUDE_FROM_BACKUP` and
+`EXCLUDE_DATABASE_FROM_BACKUP` in `homeassistant/components/backup/const.py`). The data of the
+brood estimate in a backup (R27):
+
+| Data | File | In a backup |
+|---|---|---|
+| Brood history: hours and likely brood break | `.storage/broodminder.brood.<config entry id>` | always |
+| Settings and model | `.storage/core.config_entries` | always |
+| Devices and entities (names, entity IDs, disabled) | `.storage/core.device_registry`, `.storage/core.entity_registry` | always |
+| The integration, in the version that wrote the brood history | `custom_components/broodminder/` | always |
+| History of Brood and Likely brood break since, Brood statistics | `home-assistant_v2.db` | only in a backup with the database; the estimate doesn't need them (D10) |
+
+The rest of the tracker's state isn't stored and needs no backup: the estimate is computed from
+the stored hours at setup (D16), the hive temperature comes with the next advertisement, and the
+repairs aren't persistent and are raised again by the samples.
+
+The backup holds the brood history file of the last hourly save (D32). Home Assistant's `Store`
+writes to a temporary file and renames it into place (`write_utf8_file`), so a backup made during
+a save holds the old or the new file, never part of one.
+
+A restore that includes Home Assistant (`restore_homeassistant`) replaces the configuration
+directory by the backup's before Home Assistant starts (`homeassistant/backup_restore.py`). That
+also replaces the brood history file Home Assistant wrote when it stopped for the restore (D15).
+A restore of only the database leaves the brood history file as it is. After the restore, each
+hive sets up as after a restart with the backup's brood history (R28). This also holds on
+another machine, for example when moving to new hardware: the config entry IDs come from the
+backup, and the hives are recognised by their Bluetooth address.
+
+| Age of the backup at the restore | Brood | Likely brood break since |
+|---|---|---|
+| Up to about 6 hours | An estimate at once from the backup's hours still in the window (at least 18); `hours_used` is lower until new hours fill the window | As in the backup. The estimate at setup comes less than 24 hours after the backup's last one, so counts in progress continue (R22). |
+| Older | Unknown with `not_enough_data` for about 18 hours: the backup's hours leave the window as fast as new hours arrive | A break that had started is kept and ends the normal way (R19). The next estimate comes more than 24 hours after the backup's last one, so a count in progress starts over (R22, D26). |
+
+A backup made before a hive was added doesn't contain it: the hive is discovered again as a new
+hive, with an empty brood history. A backup made with 0.4.0 or earlier restores that version,
+without a brood estimate; installing 0.5.0 again is described in
+[12.4](#124-compatibility-between-versions).
+
 ## 13. Lifecycle
 
 | Event | Behaviour |
@@ -768,6 +813,8 @@ changing versions does to the brood history and the entities:
 | Removal | Unload, then the history file, with the likely brood break, is deleted. |
 | Home Assistant restart | All buckets, including the hour in progress, and the likely brood break written at the final write; repairs not kept; the per-hive repair can only reappear after 3 hours. |
 | Crash or power loss | At most the hour in progress is lost. The likely brood break was stored at the start of that hour, with the hour's estimate already counted ([5.1](#51-sampling)). |
+| Home Assistant backup | The brood history file of the last hourly save is in it, with the settings and the integration (R27, D32). |
+| Restore of a backup | Home Assistant restarts with the backup's files; each hive sets up with the backup's brood history, as if Home Assistant had been off since the backup (R28, [12.5](#125-backup-and-restore)). |
 
 ## 14. Calibration
 
@@ -831,10 +878,14 @@ Likely brood break and the brood history file:
 | R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object) |
 | R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
+| R28, D32 | `test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_count_continues`, `test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over` (a brood history file as of a backup, with the hour in progress at its first sample) |
 
 Not covered by automated tests: N1 to N4 (by review), the startup guard of the shared repair
 (D12), a brood history file with invalid JSON (handled by Home Assistant's `Store`, which the
-test storage bypasses), and real Bluetooth reception.
+test storage bypasses), and real Bluetooth reception. R27 (what a backup contains) is verified by
+review against [12.5](#125-backup-and-restore): all stored state is in `.storage/` through
+`Store` or the config entry, and nothing outside the configuration directory. A real backup and
+restore is a manual check.
 
 ### 15.2 Manual checks on real hardware
 
@@ -857,6 +908,10 @@ range:
     were migrated).
 11. During a real brood break (for example the winter break) it shows a date about 2 to 3 days
     after the Brood % dropped, backdated to the drop, and keeps it across a restart.
+12. On a test installation, not the production one: a backup made while the Brood sensor shows
+    a value contains `.storage/broodminder.brood.<entry id>`, also without the database.
+    Restoring it within a few hours shows the value right away, and keeps Likely brood break
+    since.
 
 ## 16. Known limitations
 
@@ -870,6 +925,10 @@ range:
   that as following the weather, so a strong colony can lose some percentage points on such days.
 - The estimate lags up to an hour, because only complete hours are used.
 - A new hive, or one whose history was lost, needs about 18 hours before the first value.
+- After restoring a backup more than about 6 hours old, the Brood sensor shows unknown for about
+  18 hours, and a count in progress towards starting or ending a likely brood break starts over
+  ([12.5](#125-backup-and-restore)). A backup doesn't contain the samples of the hour in progress
+  (D32).
 - The automatic outdoor temperature is a forecast for the home location; accuracy depends on the
   home elevation, and distant apiaries need a local sensor.
 - With several weather entities and no Met.no *Forecast Home*, each hive needs a configured
