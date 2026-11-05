@@ -9,9 +9,9 @@ import pytest
 
 from custom_components.broodminder.ble_parser import extract_entities, parse_manufacturer_data
 from custom_components.broodminder.const import (
+    BATTERY_CHARGE_REMAINING,
+    BATTERY_VOLTAGE_BASED,
     MANUFACTURER_ID,
-    SENSOR_BATT,
-    SENSOR_CHARGE_REMAINING,
     SENSOR_HUM,
     SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
@@ -101,8 +101,8 @@ def test_GIVEN_battery_byte_0_to_100_WHEN_parse_THEN_battery_without_charge_rema
     assert parsed.charge_remaining_percent is None
 
     entities = extract_entities(parsed)
-    assert entities[SENSOR_BATT] == raw_battery
-    assert SENSOR_CHARGE_REMAINING not in entities
+    assert entities[BATTERY_VOLTAGE_BASED] == raw_battery
+    assert BATTERY_CHARGE_REMAINING not in entities
 
 
 @pytest.mark.parametrize(
@@ -131,8 +131,8 @@ def test_GIVEN_battery_byte_101_to_125_WHEN_parse_THEN_charge_remaining_without_
     assert parsed.charge_remaining_percent == charge_remaining
 
     entities = extract_entities(parsed)
-    assert SENSOR_BATT not in entities
-    assert entities[SENSOR_CHARGE_REMAINING] == charge_remaining
+    assert BATTERY_VOLTAGE_BASED not in entities
+    assert entities[BATTERY_CHARGE_REMAINING] == charge_remaining
 
 
 @pytest.mark.parametrize("raw_battery", [126, 250, 255])
@@ -154,8 +154,8 @@ def test_GIVEN_battery_byte_above_125_WHEN_parse_THEN_battery_and_charge_remaini
     assert parsed.charge_remaining_percent is None
 
     entities = extract_entities(parsed)
-    assert SENSOR_BATT not in entities
-    assert SENSOR_CHARGE_REMAINING not in entities
+    assert BATTERY_VOLTAGE_BASED not in entities
+    assert BATTERY_CHARGE_REMAINING not in entities
 
 
 def test_GIVEN_model_t_WHEN_battery_in_range_THEN_reports_battery() -> None:
@@ -174,7 +174,7 @@ def test_GIVEN_model_t_WHEN_battery_in_range_THEN_reports_battery() -> None:
     assert parsed.battery_percent == 1
 
     entities = extract_entities(parsed)
-    assert SENSOR_BATT in entities
+    assert BATTERY_VOLTAGE_BASED in entities
 
 
 def test_GIVEN_model_t_WHEN_parse_with_humidity_value_THEN_reports_no_humidity() -> None:
@@ -328,7 +328,7 @@ def test_GIVEN_th_56_WHEN_parse_THEN_reports_extended_fields() -> None:
 
     # Verify entity export
     entities = extract_entities(parsed)
-    assert entities[SENSOR_BATT] == 100
+    assert entities[BATTERY_VOLTAGE_BASED] == 100
     assert entities[SENSOR_HUM] == 55
     assert math.isclose(entities[SENSOR_TEMP], 1.23, abs_tol=1e-6)
     assert entities[SENSOR_SAMPLE_COUNT] == 0x1234
@@ -420,7 +420,7 @@ def test_GIVEN_scale_w_57_WHEN_parse_THEN_reports_extended_fields() -> None:
 
     # Verify entity export
     entities = extract_entities(parsed)
-    assert entities[SENSOR_BATT] == 100
+    assert entities[BATTERY_VOLTAGE_BASED] == 100
     assert entities[SENSOR_HUM] == 55
     assert math.isclose(entities[SENSOR_TEMP], 1.23, abs_tol=1e-6)
     assert entities[SENSOR_SAMPLE_COUNT] == 0x1234
@@ -502,7 +502,7 @@ def test_GIVEN_scale_w_43_doc_advertisement_WHEN_parse_THEN_reports_only_sent_va
 
     entities = extract_entities(parsed)
     assert set(entities) == {
-        SENSOR_BATT,
+        BATTERY_VOLTAGE_BASED,
         SENSOR_HUM,
         SENSOR_SAMPLE_COUNT,
         SENSOR_TEMP,
@@ -510,7 +510,7 @@ def test_GIVEN_scale_w_43_doc_advertisement_WHEN_parse_THEN_reports_only_sent_va
         SENSOR_WEIGHT_R,
         SENSOR_WEIGHT_REALTIME,
     }
-    assert entities[SENSOR_BATT] == 2
+    assert entities[BATTERY_VOLTAGE_BASED] == 2
     assert entities[SENSOR_HUM] == 55
     assert entities[SENSOR_SAMPLE_COUNT] == 33
     assert math.isclose(entities[SENSOR_TEMP], 23.69, abs_tol=0.01)
@@ -653,7 +653,7 @@ def test_GIVEN_scale_with_extra_channels_WHEN_parse_THEN_reports_all_weights(
 
     entities = extract_entities(parsed)
     assert set(entities) - {SENSOR_HUM} == {
-        SENSOR_BATT,
+        BATTERY_VOLTAGE_BASED,
         SENSOR_SAMPLE_COUNT,
         SENSOR_TEMP,
         SENSOR_TEMP_RT,

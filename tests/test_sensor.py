@@ -6,10 +6,11 @@ import pytest
 
 from custom_components.broodminder.ble_parser import parse_manufacturer_data
 from custom_components.broodminder.const import (
+    BATTERY_CHARGE_REMAINING,
+    BATTERY_VOLTAGE_BASED,
     MANUFACTURER,
     MANUFACTURER_ID,
     SENSOR_BATT,
-    SENSOR_CHARGE_REMAINING,
     SENSOR_TEMP,
     SENSOR_TEMP_RT,
     SENSOR_WEIGHT_L,
@@ -90,14 +91,21 @@ def test_GIVEN_scale_w_57_WHEN_build_update_THEN_temperature_and_weight_have_pre
     assert precisions[SENSOR_WEIGHT_REALTIME] == 2
 
 
-def test_GIVEN_charge_remaining_byte_WHEN_build_update_THEN_only_charge_remaining() -> None:
-    """Verifies a charge remaining reading updates only the Charge remaining sensor."""
+@pytest.mark.parametrize(
+    ("raw_battery", "reading_key", "reading"),
+    [(80, BATTERY_VOLTAGE_BASED, 80), (110, BATTERY_CHARGE_REMAINING, 40)],
+    ids=["voltage_based", "charge_remaining"],
+)
+def test_GIVEN_battery_byte_WHEN_build_update_THEN_reading_for_battery_entity_only(
+    raw_battery: int, reading_key: str, reading: int
+) -> None:
+    """Verifies each kind of battery reading goes to the one Battery entity, not its own."""
 
     payload = bytearray(15)
     payload[0] = 56  # model
     payload[1] = 2  # v.minor
     payload[2] = 1  # v.major
-    payload[4] = 110  # charge remaining: 100 + 40 / 4
+    payload[4] = raw_battery  # battery % or charge remaining: 100 + percent / 4
 
     adv = {MANUFACTURER_ID: bytes(payload)}
     parsed = parse_manufacturer_data("11:22:33:44:55:66", adv)
@@ -110,10 +118,13 @@ def test_GIVEN_charge_remaining_byte_WHEN_build_update_THEN_only_charge_remainin
         key.key: description for key, description in update.entity_descriptions.items()
     }
 
+    battery_readings = {BATTERY_VOLTAGE_BASED, BATTERY_CHARGE_REMAINING}
+    assert {key for key in values if key in battery_readings} == {reading_key}
+    assert values[reading_key] == reading
     assert SENSOR_BATT not in values
-    assert values[SENSOR_CHARGE_REMAINING] == 40
-    assert names[SENSOR_CHARGE_REMAINING] == "Charge remaining"
-    assert descriptions[SENSOR_CHARGE_REMAINING].device_class == SensorDeviceClass.BATTERY
+    assert names[SENSOR_BATT] == "Battery"
+    assert descriptions[SENSOR_BATT].device_class == SensorDeviceClass.BATTERY
+    assert not battery_readings & set(descriptions)
 
 
 @pytest.mark.parametrize(

@@ -72,27 +72,24 @@ If you are technical, you can ofcourse make your own improvements and create a p
 Which sensors are created depends on the BroodMinder model. The number in brackets is the
 BroodMinder model number.
 
-| Sensor           | T (41) | T (47) | TH (42) | TH (56) | W (43) | W (57) | W3/W4 (49) | DIY (58) | SubHub (52) | Hub 4G (54), Hub Wifi (60), BeeDar (63), other |
-|------------------|:------:|:------:|:-------:|:-------:|:------:|:------:|:----------:|:--------:|:-----------:|:----------------------------------------------:|
-| Battery          | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Charge remaining | ✓ ²    | ✓ ²    | ✓ ²     | ✓ ²     | ✓ ²    | ✓ ²    | ✓ ²        | ✓ ²      | ✓ ²         | ✓ ²                                            |
-| Humidity         |        |        | ✓       | ✓       | ✓      | ✓      |            | ✓        |             | ✓                                              |
-| Temperature      | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Realtime Temp    |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
-| Sample count     | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Swarm State      | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
-| Swarm Time       | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
-| Weight Left      |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
-| Weight Right     |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
-| Weight Left 2    |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
-| Weight Right 2   |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
-| Weight Realtime  |        |        |         |         | ✓ ¹    | ✓      | ✓          | ✓        |             |                                                |
+| Sensor          | T (41) | T (47) | TH (42) | TH (56) | W (43) | W (57) | W3/W4 (49) | DIY (58) | SubHub (52) | Hub 4G (54), Hub Wifi (60), BeeDar (63), other |
+|-----------------|:------:|:------:|:-------:|:-------:|:------:|:------:|:----------:|:--------:|:-----------:|:----------------------------------------------:|
+| Battery         | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Humidity        |        |        | ✓       | ✓       | ✓      | ✓      |            | ✓        |             | ✓                                              |
+| Temperature     | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Realtime Temp   |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
+| Sample count    | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Swarm State     | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Swarm Time      | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Weight Left     |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
+| Weight Right    |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
+| Weight Left 2   |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
+| Weight Right 2  |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
+| Weight Realtime |        |        |         |         | ✓ ¹    | ✓      | ✓          | ✓        |             |                                                |
 
 ¹ The original BroodMinder-W (model 43) doesn't send a total weight. It sits under one side of
 the hive and measures half its weight, so the integration calculates Weight Realtime as
 2 × (Weight Left + Weight Right). It only appears when both sides report a weight.
-
-² Only with newer firmware. It appears once the device sends its first charge remaining reading.
 
 The SubHub, hubs and BeeDar haven't been tested: their sensors use the standard
 advertisement format, which these devices may not follow.
@@ -106,13 +103,14 @@ The BroodMinder integration provides the following sensor entities:
 
 * **Battery**  
   This provides the state of charge of the battery in percentage from 0 to 100%, based on the
-  battery voltage.
-
-* **Charge remaining**  
-  This provides the remaining battery life in percentage, in steps of 4% up to 100%, based on how
-  long the device has been running. Newer firmware sends it in place of the battery reading,
-  roughly every other reading. Battery keeps its last value meanwhile, and Charge remaining only
-  updates when the device sends it.
+  battery voltage. Newer firmware also sends the remaining battery life based on how long the
+  device has been running, in steps of 4%, in place of roughly every other voltage reading.
+  Battery then shows the lower of the two, so it doesn't jump back and forth and a battery
+  that's running low by either measure shows. The voltage drops on a cold night and recovers
+  when it warms up, so Battery can dip overnight when the voltage reading is the lower one.  
+  The `voltage_based` and `charge_remaining` attributes show the last reading of each kind;
+  `charge_remaining` stays empty on older firmware. Home Assistant remembers both across a
+  restart.
 
 * **Humidity**  
   This provides the measured humidity of the BroodMinder in percentage from 0 to 100%.

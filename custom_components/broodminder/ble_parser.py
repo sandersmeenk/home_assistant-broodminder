@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .const import (
+    BATTERY_CHARGE_REMAINING,
+    BATTERY_VOLTAGE_BASED,
     CALCULATED_TOTAL_WEIGHT_MODELS,
     CHARGE_REMAINING_RAW_MAXIMUM,
     CHARGE_REMAINING_RAW_MINIMUM,
@@ -43,8 +45,6 @@ from .const import (
     NO_HUMIDITY_MODELS,
     REALTIME_MODELS,
     SCALE_MODELS,
-    SENSOR_BATT,
-    SENSOR_CHARGE_REMAINING,
     SENSOR_HUM,
     SENSOR_PERCENTAGE_MAXIMUM,
     SENSOR_PERCENTAGE_MINIMUM,
@@ -296,9 +296,9 @@ def extract_entities(parsed: ManufacturerData) -> dict[str, Any]:
     if parsed.humidity_percent is not None:
         data[SENSOR_HUM] = parsed.humidity_percent
     if parsed.battery_percent is not None:
-        data[SENSOR_BATT] = parsed.battery_percent
+        data[BATTERY_VOLTAGE_BASED] = parsed.battery_percent
     if parsed.charge_remaining_percent is not None:
-        data[SENSOR_CHARGE_REMAINING] = parsed.charge_remaining_percent
+        data[BATTERY_CHARGE_REMAINING] = parsed.charge_remaining_percent
     if parsed.elapsed_s is not None:
         data[SENSOR_SAMPLE_COUNT] = parsed.elapsed_s
     if parsed.weight_l_kg is not None:
