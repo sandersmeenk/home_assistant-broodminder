@@ -4,6 +4,7 @@
 
 from dataclasses import asdict
 from datetime import UTC, datetime
+import json
 import time
 from typing import Any
 
@@ -11,6 +12,10 @@ from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, _get_manager
+from homeassistant.components.bluetooth.passive_update_processor import (
+    PASSIVE_UPDATE_PROCESSOR,
+    PassiveBluetoothEntityKey,
+)
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     EVENT_HOMEASSISTANT_FINAL_WRITE,
@@ -18,19 +23,16 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import CoreState, HomeAssistant, State
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.json import JSONEncoder
 import pytest
-from pytest_homeassistant_custom_component.common import (
-    MockConfigEntry,
-    async_fire_time_changed,
-    mock_restore_cache_with_extra_data,
-)
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.broodminder.brood import BroodBreak
 from custom_components.broodminder.const import (
@@ -553,43 +555,60 @@ async def test_GIVEN_battery_readings_WHEN_entry_reloaded_THEN_both_kept(
     assert _battery(hass) == ("40", 90, 40)
 
 
-async def test_GIVEN_restored_battery_readings_WHEN_voltage_reading_arrives_THEN_charge_kept(
-    hass: HomeAssistant,
+async def test_GIVEN_saved_values_WHEN_home_assistant_restarts_THEN_sensors_start_with_them(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Verifies the readings from before a restart are restored and combined with new ones."""
+    """Verifies sensors are created from the values saved before a restart, read back as JSON."""
 
-    mock_restore_cache_with_extra_data(
-        hass,
-        [
-            (
-                State(TH_BATTERY, "40", {"voltage_based": 80, "charge_remaining": 40}),
-                {"voltage_based": 80, "charge_remaining": 40},
-            )
-        ],
-    )
+    await _setup_device(hass, T_ADDRESS, _t_payload())
+    charge_remaining = bytearray(_t_payload())
+    charge_remaining[4] = 110  # charge remaining: 100 + 40 / 4
+    await _advertise(hass, T_ADDRESS, bytes(charge_remaining))
+    entry = _entry_for(hass, T_ADDRESS)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Home Assistant saves the values as JSON and reads them back after the restart
+    saved = hass.data[PASSIVE_UPDATE_PROCESSOR].all_restore_data
+    saved[entry.entry_id] = json.loads(json.dumps(saved[entry.entry_id], cls=JSONEncoder))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    t = "sensor.broodminder_t_00_00_03"
+    assert "Invalid datetime" not in caplog.text
+    assert hass.states.get(f"{t}_swarm_time").state == SWARM_TIME.isoformat()
+    assert hass.states.get(f"{t}_temperature").state == "12.34"
+    battery = hass.states.get(f"{t}_battery")
+    assert (battery.state, battery.attributes["voltage_based"]) == ("40", 70)
+
+
+async def test_GIVEN_saved_sensor_of_older_build_WHEN_restarted_THEN_not_created_again(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """Verifies a saved sensor this version doesn't have, such as Charge remaining, stays gone."""
 
     await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+    entry = _entry_for(hass, TH_ADDRESS)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
-    assert _battery(hass) == ("40", 90, 40)
-
-
-async def test_GIVEN_unusable_restored_battery_readings_WHEN_reading_arrives_THEN_ignored(
-    hass: HomeAssistant,
-) -> None:
-    """Verifies restored values that aren't whole numbers are left out."""
-
-    mock_restore_cache_with_extra_data(
-        hass,
-        [
-            (
-                State(TH_BATTERY, "40"),
-                {"voltage_based": "80", "charge_remaining": True},
-            )
-        ],
+    # A development build had a separate Charge remaining sensor
+    saved = next(
+        iter(hass.data[PASSIVE_UPDATE_PROCESSOR].all_restore_data[entry.entry_id].values())
     )
+    battery = PassiveBluetoothEntityKey("battery", TH_ADDRESS).to_string()
+    old = PassiveBluetoothEntityKey("charge_remaining", TH_ADDRESS).to_string()
+    saved["entity_descriptions"][old] = {
+        **saved["entity_descriptions"][battery],
+        "key": "charge_remaining",
+    }
+    saved["entity_names"][old] = "Charge remaining"
+    saved["entity_data"][old] = 40
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
 
-    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
-
+    unique_id = f"{TH_ADDRESS}-charge_remaining-{TH_ADDRESS}"
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
     assert _battery(hass) == ("90", 90, None)
 
 

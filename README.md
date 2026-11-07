@@ -101,7 +101,10 @@ advertisement format, which these devices may not follow.
 
 This section decribes the entities that the BroodMinder integration adds to Home Assistant.
 
-The BroodMinder integration provides the following sensor entities:
+The BroodMinder integration provides the following sensor entities. After a restart of Home
+Assistant they show their last values straight away, until the BroodMinder broadcasts new ones.
+A BroodMinder that isn't heard anymore becomes unavailable after Home Assistant's usual timeout:
+about 15 to 20 minutes after a restart.
 
 * **Battery**  
   This provides the state of charge of the battery in percentage from 0 to 100%, based on the
@@ -114,11 +117,11 @@ The BroodMinder integration provides the following sensor entities:
   `charge_remaining` stays empty on older firmware. Home Assistant remembers both across a
   restart.
 
-* **Brood**  
+* **Brood** (Experimental)  
   An estimate from 0 to 100% of the brood near the sensor, from the hive temperature and the
   outdoor temperature. See [Brood estimate](#brood-estimate).
 
-* **Likely brood break since**  
+* **Likely brood break since** (Experimental)  
   When the hive's likely brood break started, or *unknown* when there isn't one. It helps you
   time an oxalic acid treatment. See [Likely brood break](#likely-brood-break).
 
@@ -170,7 +173,7 @@ The BroodMinder integration provides the following sensor entities:
   so for this scale it is calculated as 2 × (weight left + weight right).
 
 
-## Brood estimate
+## Brood estimate (experimental)
 
 BroodMinder-T and -TH hives get a **Brood** sensor: an estimate from 0 to 100% of the brood the
 colony raises near the sensor, like the brood level in BroodMinder's Bees app. It needs no scale:
@@ -241,7 +244,7 @@ When there's no outdoor temperature, Home Assistant shows a repair under **Setti
 * `outdoor_entity`: the outdoor temperature in use.
 * `sensor_position`: the sensor position from the settings.
 
-### Likely brood break
+### Likely brood break (experimental)
 
 T and TH hives also get a **Likely brood break since** sensor. It shows when a likely brood
 break started, and *unknown* when there's no likely brood break. Home Assistant shows the date

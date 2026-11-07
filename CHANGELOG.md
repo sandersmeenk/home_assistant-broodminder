@@ -5,26 +5,25 @@ All notable changes to the BroodMinder integration for Home Assistant are listed
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+For a more detailed description of the features, see the README.md
+
+
 ## [0.5.0] - Unreleased
 
 ### Added
 
-- BroodMinder-T and -TH hives have a new Brood sensor: an estimate from 0 to 100% of the brood
+- (Experimental) BroodMinder-T and -TH hives have a new Brood sensor: an estimate from 0 to 100% of the brood
   near the sensor, from the hive temperature and the outdoor temperature. It needs no scale. See
   "Brood estimate" in the README for how it works and what the percentage means.
 - Each T and TH hive has settings (**Configure** on the hive): where the sensor sits in the
   hive, and which outdoor temperature to use. By default the outdoor temperature comes from
   Home Assistant's weather.
-- BroodMinder-T and -TH hives have a new **Likely brood break since** sensor: when the Brood
+- (Experimental) BroodMinder-T and -TH hives have a new **Likely brood break since** sensor: when the Brood
   estimate has stayed low for two days, it shows the date the brood near the sensor likely ran
   out. It helps you time an oxalic acid treatment, which works best when there's no capped
   brood. See "Likely brood break" in the README.
 - When the brood estimate has no outdoor temperature, a repair under **Settings** > **System** >
   **Repairs** explains how to fix it.
-- If a hive's stored brood history can't be read, for example after going back from a later
-  version, the hive's sensors keep working and the brood estimate starts again.
-- Hives added before this version get their Brood sensor and settings after their first
-  broadcast once you've updated.
 
 ### Changed
 
@@ -35,6 +34,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Home Assistant remembers both across a restart.
 - A battery reading the integration can't make sense of is now ignored instead of being shown as
   100%. Battery keeps its last value.
+- After a restart of Home Assistant, BroodMinder sensors show their last values straight away,
+  instead of being unavailable until each BroodMinder broadcasts again.
 
 ### Fixed
 

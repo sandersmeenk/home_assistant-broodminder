@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from collections.abc import Iterable
 from datetime import datetime
 import logging
-from typing import Any, Self
+from typing import Any
 
 from homeassistant import config_entries
 from homeassistant.components.bluetooth.passive_update_processor import (
@@ -24,7 +24,6 @@ from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 
@@ -138,6 +137,24 @@ class BMDescriptions:
 
 DESCRIPTIONS = BMDescriptions()
 
+# Keys of the entities the processor creates; restored data may hold keys an older build had
+PROCESSOR_ENTITY_KEYS = frozenset(
+    {
+        SENSOR_TEMP,
+        SENSOR_TEMP_RT,
+        SENSOR_HUM,
+        SENSOR_BATT,
+        SENSOR_SAMPLE_COUNT,
+        SENSOR_WEIGHT_L,
+        SENSOR_WEIGHT_R,
+        SENSOR_WEIGHT_L2,
+        SENSOR_WEIGHT_R2,
+        SENSOR_WEIGHT_REALTIME,
+        SENSOR_SWARM_STATE,
+        SENSOR_SWARM_TIME,
+    }
+)
+
 
 def swarm_state_description(swarm_state: int) -> str:
     """Return the human readable description of a SwarmMinder state code."""
@@ -246,16 +263,26 @@ async def async_setup_entry(
     """Set up the BroodMinder sensors."""
     processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
 
+    @callback
+    def _async_add_processor_entities(entities: Iterable[BroodMinderSensorEntity]) -> None:
+        # Leave out keys no longer sent, such as a Charge remaining sensor of an older build
+        async_add_entities(
+            [entity for entity in entities if entity.entity_key.key in PROCESSOR_ENTITY_KEYS]
+        )
+
     # Create entities when new keys appear
     entry.async_on_unload(
-        processor.async_add_entities_listener(_create_entity, async_add_entities)
+        processor.async_add_entities_listener(_create_entity, _async_add_processor_entities)
     )
 
     # Get coordinator and brood tracker stored by __init__.py
     data: BroodMinderData = hass.data[DOMAIN][entry.entry_id]
 
-    # Register the processor with the coordinator
-    entry.async_on_unload(data.coordinator.async_register_processor(processor))
+    # Register the processor with the coordinator; with the description class, Home Assistant
+    # restores the last values after a restart, so sensors don't wait for the next advertisement
+    entry.async_on_unload(
+        data.coordinator.async_register_processor(processor, SensorEntityDescription)
+    )
 
     if data.brood_tracker is not None:
         address, model = data.coordinator.address, entry.data[CONF_MODEL]
@@ -347,7 +374,7 @@ def _create_entity(
     entity_key: PassiveBluetoothEntityKey,
     description: SensorEntityDescription,
 ) -> BroodMinderSensorEntity:
-    """Create the entity for a key; Battery restores its readings after a restart."""
+    """Create the entity for a key; Battery combines two kinds of reading."""
     if entity_key.key == SENSOR_BATT:
         return BroodMinderBatterySensor(processor, entity_key, description)
     return BroodMinderSensorEntity(processor, entity_key, description)
@@ -364,7 +391,11 @@ class BroodMinderSensorEntity(
     def native_value(self) -> StateType | datetime:
         """Return the latest value for this sensor."""
         # For timestamp sensors, ensure extract_entities() returns a datetime
-        return self.processor.entity_data.get(self.entity_key)
+        value = self.processor.entity_data.get(self.entity_key)
+        if self.entity_key.key == SENSOR_SWARM_TIME and isinstance(value, str):
+            # Restored after a restart: the saved values hold the time as text
+            return dt_util.parse_datetime(value)
+        return value
 
     # Attributes
     @property
@@ -442,85 +473,38 @@ class BroodMinderSensorEntity(
         return None
 
 
-def _restored_reading(value: Any) -> int | None:
-    """Return a restored battery reading, or None if it isn't a whole number."""
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    return None
-
-
-@dataclass(frozen=True)
-class BatteryReadings(ExtraStoredData):
-    """The last voltage based and charge remaining readings, kept across restarts."""
-
-    voltage_based: int | None = None
-    charge_remaining: int | None = None
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return the readings to store."""
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, restored: dict[str, Any]) -> Self:
-        """Return the stored readings, ignoring values that aren't readings."""
-        return cls(
-            voltage_based=_restored_reading(restored.get("voltage_based")),
-            charge_remaining=_restored_reading(restored.get("charge_remaining")),
-        )
-
-
-class BroodMinderBatterySensor(BroodMinderSensorEntity, RestoreEntity):
+class BroodMinderBatterySensor(BroodMinderSensorEntity):
     """Battery: the lower of the last voltage based and charge remaining readings.
 
     Newer firmware sends charge remaining in place of the voltage based reading, roughly every
-    other reading, so the entity keeps the last of each and restores them after a restart.
+    other reading. The processor keeps the last of each, and restores them after a restart.
     """
 
-    _readings = BatteryReadings()
-
     async def async_added_to_hass(self) -> None:
-        """Restore the readings and follow every advertisement."""
+        """Follow both kinds of reading, which have no entities of their own."""
         await super().async_added_to_hass()
-        if (restored := await self.async_get_last_extra_data()) is not None:
-            self._readings = BatteryReadings.from_dict(restored.as_dict())
-        # Every update, not only changed values, including the one that created this entity
-        self.async_on_remove(self.processor.async_add_listener(self._handle_battery_update))
+        for key in (BATTERY_VOLTAGE_BASED, BATTERY_CHARGE_REMAINING):
+            self.async_on_remove(
+                self.processor.async_add_entity_key_listener(
+                    self._handle_processor_update,
+                    PassiveBluetoothEntityKey(key, self.entity_key.device_id),
+                )
+            )
 
-    def _take_readings(self, entity_data: dict[PassiveBluetoothEntityKey, Any]) -> bool:
-        """Keep the readings in entity_data; return whether they changed."""
-        device_id = self.entity_key.device_id
-        readings = BatteryReadings(
-            voltage_based=entity_data.get(
-                PassiveBluetoothEntityKey(BATTERY_VOLTAGE_BASED, device_id),
-                self._readings.voltage_based,
-            ),
-            charge_remaining=entity_data.get(
-                PassiveBluetoothEntityKey(BATTERY_CHARGE_REMAINING, device_id),
-                self._readings.charge_remaining,
-            ),
+    def _reading(self, key: str) -> int | None:
+        return self.processor.entity_data.get(
+            PassiveBluetoothEntityKey(key, self.entity_key.device_id)
         )
-        if readings == self._readings:
-            return False
-        self._readings = readings
-        return True
-
-    @callback
-    def _handle_battery_update(self, new_data: PassiveBluetoothDataUpdate[Any] | None) -> None:
-        """Keep the readings of an advertisement and show the new battery level."""
-        if new_data is not None and self._take_readings(new_data.entity_data):
-            self.async_write_ha_state()
-
-    @property
-    def extra_restore_state_data(self) -> BatteryReadings:
-        """Return the readings to restore after a restart."""
-        return self._readings
 
     @property
     def native_value(self) -> int | None:
         """Return the lower of the readings."""
         readings = [
             reading
-            for reading in (self._readings.voltage_based, self._readings.charge_remaining)
+            for reading in (
+                self._reading(BATTERY_VOLTAGE_BASED),
+                self._reading(BATTERY_CHARGE_REMAINING),
+            )
             if reading is not None
         ]
         return min(readings, default=None)
@@ -529,6 +513,6 @@ class BroodMinderBatterySensor(BroodMinderSensorEntity, RestoreEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the readings behind the battery level."""
         return {
-            ATTR_VOLTAGE_BASED: self._readings.voltage_based,
-            ATTR_CHARGE_REMAINING: self._readings.charge_remaining,
+            ATTR_VOLTAGE_BASED: self._reading(BATTERY_VOLTAGE_BASED),
+            ATTR_CHARGE_REMAINING: self._reading(BATTERY_CHARGE_REMAINING),
         }
