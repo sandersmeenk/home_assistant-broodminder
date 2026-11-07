@@ -98,6 +98,9 @@ SENSOR_TEMP = "temperature"
 SENSOR_TEMP_RT = "temperature_realtime"
 SENSOR_HUM = "humidity"
 SENSOR_BATT = "battery"
+# Readings behind the Battery sensor, passed on without entities of their own
+BATTERY_VOLTAGE_BASED = "battery_voltage_based"
+BATTERY_CHARGE_REMAINING = "battery_charge_remaining"
 
 SENSOR_SAMPLE_COUNT = "sample_count"
 SENSOR_WEIGHT_L = "weight_left"
@@ -109,6 +112,10 @@ SENSOR_SWARM_STATE = "swarm_state"
 SENSOR_SWARM_TIME = "swarm_time"  # may be time since boot if not synced
 # Older swarm times are time since boot: the clock was never set by a Bees app sync
 SWARM_TIME_MIN_VALID_UNIX = 1420070400  # 2015-01-01T00:00:00Z
+
+# Battery attributes: the last reading of each kind, the lower of which is the battery level
+ATTR_VOLTAGE_BASED = "voltage_based"
+ATTR_CHARGE_REMAINING = "charge_remaining"
 
 # Swarm state attribute: human readable SwarmMinder state
 ATTR_DESCRIPTION = "description"
@@ -131,5 +138,10 @@ SWARM_STATE_DESCRIPTION_UNKNOWN = "Unknown"
 
 SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100
+
+# Newer firmware sends charge remaining (runtime based) in the battery byte as 100 + percent / 4
+CHARGE_REMAINING_RAW_MINIMUM = 101
+CHARGE_REMAINING_RAW_MAXIMUM = 125
+CHARGE_REMAINING_RAW_SCALE = 4
 
 MANUFACTURER = "BroodMinder"

@@ -102,7 +102,15 @@ This section decribes the entities that the BroodMinder integration adds to Home
 The BroodMinder integration provides the following sensor entities:
 
 * **Battery**  
-  This provides the state of charge of the battery in percentage from 0 to 100%.
+  This provides the state of charge of the battery in percentage from 0 to 100%, based on the
+  battery voltage. Newer firmware also sends the remaining battery life based on how long the
+  device has been running, in steps of 4%, in place of roughly every other voltage reading.
+  Battery then shows the lower of the two, so it doesn't jump back and forth and a battery
+  that's running low by either measure shows. The voltage drops on a cold night and recovers
+  when it warms up, so Battery can dip overnight when the voltage reading is the lower one.  
+  The `voltage_based` and `charge_remaining` attributes show the last reading of each kind;
+  `charge_remaining` stays empty on older firmware. Home Assistant remembers both across a
+  restart.
 
 * **Humidity**  
   This provides the measured humidity of the BroodMinder in percentage from 0 to 100%.

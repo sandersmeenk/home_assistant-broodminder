@@ -9,10 +9,11 @@ from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, _get_manager
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigEntry, ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
 import pytest
+from pytest_homeassistant_custom_component.common import mock_restore_cache_with_extra_data
 
 from custom_components.broodminder.const import DOMAIN, MANUFACTURER, MANUFACTURER_ID
 
@@ -420,3 +421,144 @@ async def test_GIVEN_th_sensor_WHEN_too_short_advertisement_arrives_THEN_sensors
 
     assert hass.states.get(temperature).state == "25.0"
     assert "Unexpected error" not in caplog.text
+
+
+TH_BATTERY = "sensor.broodminder_th_00_00_01_battery"
+
+
+def _th_battery_payload(battery: int) -> bytes:
+    """Return the TH's advertisement with a battery byte: battery % or 100 + charge / 4."""
+    payload = _payload(model=56, battery=battery, temp_c=25.0)
+    payload[14] = 55  # humidity
+    return bytes(payload)
+
+
+async def _advertise(hass: HomeAssistant, address: str, payload: bytes) -> None:
+    _inject(hass, address, payload)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+def _battery(hass: HomeAssistant) -> tuple[str, int | None, int | None]:
+    """Return the TH's battery level and the voltage based and charge remaining readings."""
+    state = hass.states.get(TH_BATTERY)
+    return (state.state, state.attributes["voltage_based"], state.attributes["charge_remaining"])
+
+
+async def test_GIVEN_th_sensor_WHEN_battery_readings_alternate_THEN_battery_is_lower_reading(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies one Battery entity shows the lower of the last reading of each kind."""
+
+    # Voltage based reading only
+    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+    assert _battery(hass) == ("90", 90, None)
+    state = hass.states.get(TH_BATTERY)
+    assert state.attributes["unit_of_measurement"] == "%"
+    assert state.attributes["device_class"] == "battery"
+    assert state.attributes["state_class"] == "measurement"
+    assert "charge_remaining" not in _sensors_of(hass, "sensor.broodminder_th_00_00_01")
+
+    # Charge remaining 100 + 40 / 4 is lower
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=110))
+    assert _battery(hass) == ("40", 90, 40)
+
+    # A lower voltage based reading that is still above the charge remaining
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=80))
+    assert _battery(hass) == ("40", 80, 40)
+
+    # The voltage based reading drops below the charge remaining, as on a cold night
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=30))
+    assert _battery(hass) == ("30", 30, 40)
+
+    # Invalid value above 125: nothing changes
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=200))
+    assert _battery(hass) == ("30", 30, 40)
+
+    # Byte 100 is a voltage based reading
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=100))
+    assert _battery(hass) == ("40", 100, 40)
+
+
+async def test_GIVEN_voltage_readings_only_WHEN_voltage_goes_down_and_up_THEN_battery_follows(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies Battery follows the voltage down and up on firmware without charge remaining."""
+
+    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+    assert _battery(hass) == ("90", 90, None)
+
+    # Down, as on a cold night or with a battery running low
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=30))
+    assert _battery(hass) == ("30", 30, None)
+
+    # Up again, as when it warms up or after a battery change
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=95))
+    assert _battery(hass) == ("95", 95, None)
+
+
+async def test_GIVEN_no_battery_entity_yet_WHEN_reading_arrives_THEN_battery_shows_it_at_once(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies the advertisement that creates Battery is used, though it isn't repeated."""
+
+    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=200))  # invalid
+    assert hass.states.get(TH_BATTERY) is None
+
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+
+    assert _battery(hass) == ("90", 90, None)
+
+
+async def test_GIVEN_battery_readings_WHEN_entry_reloaded_THEN_both_kept(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies a reload keeps both readings, not only the one advertised last."""
+
+    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+    await _advertise(hass, TH_ADDRESS, _th_battery_payload(battery=110))
+    entry = _entry_for(hass, TH_ADDRESS)
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _battery(hass) == ("40", 90, 40)
+
+
+async def test_GIVEN_restored_battery_readings_WHEN_voltage_reading_arrives_THEN_charge_kept(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies the readings from before a restart are restored and combined with new ones."""
+
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(TH_BATTERY, "40", {"voltage_based": 80, "charge_remaining": 40}),
+                {"voltage_based": 80, "charge_remaining": 40},
+            )
+        ],
+    )
+
+    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+
+    assert _battery(hass) == ("40", 90, 40)
+
+
+async def test_GIVEN_unusable_restored_battery_readings_WHEN_reading_arrives_THEN_ignored(
+    hass: HomeAssistant,
+) -> None:
+    """Verifies restored values that aren't whole numbers are left out."""
+
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(TH_BATTERY, "40"),
+                {"voltage_based": "80", "charge_remaining": True},
+            )
+        ],
+    )
+
+    await _setup_device(hass, TH_ADDRESS, _th_battery_payload(battery=90))
+
+    assert _battery(hass) == ("90", 90, None)

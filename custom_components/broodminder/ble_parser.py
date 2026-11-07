@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .const import (
+    BATTERY_CHARGE_REMAINING,
+    BATTERY_VOLTAGE_BASED,
     CALCULATED_TOTAL_WEIGHT_MODELS,
+    CHARGE_REMAINING_RAW_MAXIMUM,
+    CHARGE_REMAINING_RAW_MINIMUM,
+    CHARGE_REMAINING_RAW_SCALE,
     EXTRA_WEIGHT_MODELS,
     HALF_HIVE_WEIGHT_FACTOR,
     ID_TO_MODEL,
@@ -40,7 +45,6 @@ from .const import (
     NO_HUMIDITY_MODELS,
     REALTIME_MODELS,
     SCALE_MODELS,
-    SENSOR_BATT,
     SENSOR_HUM,
     SENSOR_PERCENTAGE_MAXIMUM,
     SENSOR_PERCENTAGE_MINIMUM,
@@ -87,6 +91,7 @@ class ManufacturerData:
     swarm_state_numeric: int | None = None
     swarm_time_utc: datetime | None = None  # None if the device clock wasn't synced
     swarm_time_supported: bool = False
+    charge_remaining_percent: int | None = None
 
 
 def _u8(payload: bytes, idx: int) -> int | None:
@@ -121,11 +126,19 @@ def _parse_temperature_c(model: int, raw: int | None) -> float | None:
 
 
 def _parse_battery(raw: int | None) -> int | None:
-    # Clamp to HA's 0..100 expectation; some frames can exceed 100.
-    if raw is None or raw < 0:
+    # Voltage based percentage; above 100 the byte holds charge remaining or is invalid
+    if raw is None or not (SENSOR_PERCENTAGE_MINIMUM <= raw <= SENSOR_PERCENTAGE_MAXIMUM):
         return None
 
-    return min(SENSOR_PERCENTAGE_MAXIMUM, max(SENSOR_PERCENTAGE_MINIMUM, raw))
+    return raw
+
+
+def _parse_charge_remaining(raw: int | None) -> int | None:
+    # Newer firmware, roughly every other reading: runtime based, encoded as 100 + percent / 4
+    if raw is None or not (CHARGE_REMAINING_RAW_MINIMUM <= raw <= CHARGE_REMAINING_RAW_MAXIMUM):
+        return None
+
+    return (raw - SENSOR_PERCENTAGE_MAXIMUM) * CHARGE_REMAINING_RAW_SCALE
 
 
 def _parse_humidity(model: int, raw: int | None) -> int | None:
@@ -201,6 +214,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     fw = f"{ver_major}.{ver_minor}"
 
     battery = _parse_battery(_u8(payload, IDX_BATTERY))
+    charge_remaining = _parse_charge_remaining(_u8(payload, IDX_BATTERY))
     temp_c = _parse_temperature_c(model, _u16(payload, IDX_TEMP_L, IDX_TEMP_H))
     humidity = _parse_humidity(model, _u8(payload, IDX_HUMIDITY))
     elapsed_s = _u16(payload, IDX_ELAPSED_L, IDX_ELAPSED_H)
@@ -267,6 +281,7 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
         swarm_state_numeric=swarm_state,
         swarm_time_utc=swarm_time_dt,
         swarm_time_supported=swarm_time_supported,
+        charge_remaining_percent=charge_remaining,
     )
 
 
@@ -281,7 +296,9 @@ def extract_entities(parsed: ManufacturerData) -> dict[str, Any]:
     if parsed.humidity_percent is not None:
         data[SENSOR_HUM] = parsed.humidity_percent
     if parsed.battery_percent is not None:
-        data[SENSOR_BATT] = parsed.battery_percent
+        data[BATTERY_VOLTAGE_BASED] = parsed.battery_percent
+    if parsed.charge_remaining_percent is not None:
+        data[BATTERY_CHARGE_REMAINING] = parsed.charge_remaining_percent
     if parsed.elapsed_s is not None:
         data[SENSOR_SAMPLE_COUNT] = parsed.elapsed_s
     if parsed.weight_l_kg is not None:

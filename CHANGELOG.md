@@ -7,10 +7,22 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.5.0] - Unreleased
 
+### Changed
+
+- Newer BroodMinder firmware also sends the remaining battery life, based on how long the device
+  has been running, in place of roughly every other battery voltage reading. Battery now shows
+  the lower of the two, so a battery that's running low by either measure shows. The last
+  reading of each kind is shown as the `voltage_based` and `charge_remaining` attributes, and
+  Home Assistant remembers both across a restart.
+- A battery reading the integration can't make sense of is now ignored instead of being shown as
+  100%. Battery keeps its last value.
+
 ### Fixed
 
 - A BroodMinder broadcast that is too short to read no longer puts an error in the Home
   Assistant log. It's now ignored and your sensors keep their last values.
+- On newer firmware, Battery no longer jumps to 100% on every other reading. Its history from
+  before this version still shows those jumps.
 
 ### Internal
 
