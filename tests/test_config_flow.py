@@ -303,7 +303,7 @@ async def test_GIVEN_loaded_entry_WHEN_unloaded_THEN_sensors_unavailable(
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.NOT_LOADED
-    assert entry.entry_id not in hass.data[DOMAIN]
+    assert not hasattr(entry, "runtime_data")
     assert hass.states.get("sensor.broodminder_th_00_00_01_temperature").state == "unavailable"
 
 

@@ -7,7 +7,6 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from homeassistant import config_entries
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
     PassiveBluetoothDataUpdate,
@@ -27,7 +26,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 
-from . import BroodMinderData
+from . import BroodMinderConfigEntry
 from .ble_parser import ManufacturerData, device_name, extract_entities, model_name
 from .brood_tracker import BroodTracker
 from .const import (
@@ -257,7 +256,7 @@ def sensor_update_to_bluetooth_data_update(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: config_entries.ConfigEntry,
+    entry: BroodMinderConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the BroodMinder sensors."""
@@ -275,8 +274,8 @@ async def async_setup_entry(
         processor.async_add_entities_listener(_create_entity, _async_add_processor_entities)
     )
 
-    # Get coordinator and brood tracker stored by __init__.py
-    data: BroodMinderData = hass.data[DOMAIN][entry.entry_id]
+    # Coordinator and brood tracker set up by __init__.py
+    data = entry.runtime_data
 
     # Register the processor with the coordinator; with the description class, Home Assistant
     # restores the last values after a restart, so sensors don't wait for the next advertisement

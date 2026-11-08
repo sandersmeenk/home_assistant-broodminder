@@ -203,17 +203,12 @@ def parse_manufacturer_data(address: str, mfg_data: dict[int, bytes]) -> Manufac
     """Parses the manufacturer data of the advertisement."""
 
     payload = mfg_data.get(MANUFACTURER_ID)
-    # We need up to index 20 (inclusive) if present → len >= 21
-    if (
-        not payload or len(payload) < MIN_PAYLOAD_LEN
-    ):  # keep permissive; we'll guard per-field reads
+    # Model, version and battery must be present; later fields are read only if present
+    if not payload or len(payload) < MIN_PAYLOAD_LEN:
         return None
 
     model = payload[IDX_MODEL]
-
-    ver_minor = payload[IDX_VER_MINOR] if len(payload) > IDX_VER_MINOR else 0
-    ver_major = payload[IDX_VER_MAJOR] if len(payload) > IDX_VER_MAJOR else 0
-    fw = f"{ver_major}.{ver_minor}"
+    fw = f"{payload[IDX_VER_MAJOR]}.{payload[IDX_VER_MINOR]}"
 
     battery = _parse_battery(_u8(payload, IDX_BATTERY))
     charge_remaining = _parse_charge_remaining(_u8(payload, IDX_BATTERY))

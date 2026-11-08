@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .ble_parser import ManufacturerData, parse_manufacturer_data
 from .brood_tracker import BroodTracker, async_remove_brood_history
-from .const import BROOD_MODELS, CONF_MODEL, DOMAIN, MANUFACTURER_ID
+from .const import BROOD_MODELS, CONF_MODEL, MANUFACTURER_ID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +30,9 @@ class BroodMinderData:
     brood_tracker: BroodTracker | None  # only for models measuring in-hive temperature
 
 
+type BroodMinderConfigEntry = ConfigEntry[BroodMinderData]
+
+
 def _update_method(service_info: BluetoothServiceInfoBleak) -> ManufacturerData | None:
     """Parse incoming advertisements into our high-level ManufacturerData."""
     if MANUFACTURER_ID not in service_info.manufacturer_data:
@@ -39,7 +42,7 @@ def _update_method(service_info: BluetoothServiceInfoBleak) -> ManufacturerData 
 
 
 @callback
-def _async_store_model(hass: HomeAssistant, entry: ConfigEntry, model: int) -> None:
+def _async_store_model(hass: HomeAssistant, entry: BroodMinderConfigEntry, model: int) -> None:
     """Store the model of an entry created before 0.5.0; a hive reloads to get brood."""
     if CONF_MODEL in entry.data:
         return
@@ -49,7 +52,7 @@ def _async_store_model(hass: HomeAssistant, entry: ConfigEntry, model: int) -> N
         hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: BroodMinderConfigEntry) -> bool:
     """Set up BroodMinder BLE from a config entry."""
     address = entry.unique_id  # Bluetooth device address
     brood_tracker: BroodTracker | None = None
@@ -75,7 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await brood_tracker.async_start()
         entry.async_on_unload(brood_tracker.async_stop)
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = BroodMinderData(coordinator, brood_tracker)
+    entry.runtime_data = BroodMinderData(coordinator, brood_tracker)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Start after platforms subscribe
@@ -85,12 +88,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: BroodMinderConfigEntry) -> bool:
     """Unload a BroodMinder config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
