@@ -72,24 +72,26 @@ If you are technical, you can ofcourse make your own improvements and create a p
 Which sensors are created depends on the BroodMinder model. The number in brackets is the
 BroodMinder model number.
 
-| Sensor          | T (41) | T (47) | TH (42) | TH (56) | W (43) | W (57) | W3/W4 (49) | DIY (58) | SubHub (52) | Hub 4G (54), Hub Wifi (60), BeeDar (63), other |
-|-----------------|:------:|:------:|:-------:|:-------:|:------:|:------:|:----------:|:--------:|:-----------:|:----------------------------------------------:|
-| Battery         | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Humidity        |        |        | ✓       | ✓       | ✓      | ✓      |            | ✓        |             | ✓                                              |
-| Temperature     | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Realtime Temp   |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
-| Sample count    | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Swarm State     | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
-| Swarm Time      | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
-| Weight Left     |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
-| Weight Right    |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
-| Weight Left 2   |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
-| Weight Right 2  |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
-| Weight Realtime |        |        |         |         | ✓ ¹    | ✓      | ✓          | ✓        |             |                                                |
+| Sensor                   | T (41) | T (47) | TH (42) | TH (56) | W (43) | W (57) | W3/W4 (49) | DIY (58) | SubHub (52) | Hub 4G (54), Hub Wifi (60), BeeDar (63), other |
+|--------------------------|:------:|:------:|:-------:|:-------:|:------:|:------:|:----------:|:--------:|:-----------:|:----------------------------------------------:|
+| Battery                  | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Brood                    | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Likely brood break since | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Humidity                 |        |        | ✓       | ✓       | ✓      | ✓      |            | ✓        |             | ✓                                              |
+| Temperature              | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Realtime temp            |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
+| Sample count             | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
+| Swarm state              | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Swarm time               | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Weight left              |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
+| Weight right             |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
+| Weight left 2            |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
+| Weight right 2           |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
+| Weight realtime          |        |        |         |         | ✓ ¹    | ✓      | ✓          | ✓        |             |                                                |
 
 ¹ The original BroodMinder-W (model 43) doesn't send a total weight. It sits under one side of
-the hive and measures half its weight, so the integration calculates Weight Realtime as
-2 × (Weight Left + Weight Right). It only appears when both sides report a weight.
+the hive and measures half its weight, so the integration calculates Weight realtime as
+2 × (Weight left + Weight right). It only appears when both sides report a weight.
 
 The SubHub, hubs and BeeDar haven't been tested: their sensors use the standard
 advertisement format, which these devices may not follow.
@@ -99,10 +101,29 @@ advertisement format, which these devices may not follow.
 
 This section decribes the entities that the BroodMinder integration adds to Home Assistant.
 
-The BroodMinder integration provides the following sensor entities:
+The BroodMinder integration provides the following sensor entities. After a restart of Home
+Assistant they show their last values straight away, until the BroodMinder broadcasts new ones.
+A BroodMinder that isn't heard anymore becomes unavailable after Home Assistant's usual timeout:
+about 15 to 20 minutes after a restart.
 
 * **Battery**  
-  This provides the state of charge of the battery in percentage from 0 to 100%.
+  This provides the state of charge of the battery in percentage from 0 to 100%, based on the
+  battery voltage. Newer firmware also sends the remaining battery life based on how long the
+  device has been running, in steps of 4%, in place of roughly every other voltage reading.
+  Battery then shows the lower of the two, so it doesn't jump back and forth and a battery
+  that's running low by either measure shows. The voltage drops on a cold night and recovers
+  when it warms up, so Battery can dip overnight when the voltage reading is the lower one.  
+  The `voltage_based` and `charge_remaining` attributes show the last reading of each kind;
+  `charge_remaining` stays empty on older firmware. Home Assistant remembers both across a
+  restart.
+
+* **Brood** (Experimental)  
+  An estimate from 0 to 100% of the brood near the sensor, from the hive temperature and the
+  outdoor temperature. See [Brood estimate](#brood-estimate).
+
+* **Likely brood break since** (Experimental)  
+  When the hive's likely brood break started, or *unknown* when there isn't one. It helps you
+  time an oxalic acid treatment. See [Likely brood break](#likely-brood-break).
 
 * **Humidity**  
   This provides the measured humidity of the BroodMinder in percentage from 0 to 100%.
@@ -121,7 +142,7 @@ The BroodMinder integration provides the following sensor entities:
   The state is the numeric code below; the `description` attribute holds its description
   (*Unknown* for an undocumented code).
   From the [documentation](https://doc.mybroodminder.com/31_sensors_T_TH):
-  | Swarm State  | Description                                                    |
+  | Swarm state  | Description                                                    |
   |--------------|----------------------------------------------------------------|
   | 0            | Stopped                                                        |
   | 1            | Stopped - initialization complete                              |
@@ -150,6 +171,136 @@ The BroodMinder integration provides the following sensor entities:
   The total weight of the hive in kilograms, as sent by the scale.
   The original BroodMinder-W (model `43`) weighs one side of the hive and doesn't send a total,
   so for this scale it is calculated as 2 × (weight left + weight right).
+
+
+## Brood estimate (experimental)
+
+BroodMinder-T and -TH hives get a **Brood** sensor: an estimate from 0 to 100% of the brood the
+colony raises near the sensor, like the brood level in BroodMinder's Bees app. It needs no scale:
+it compares the hive temperature with the outdoor temperature.
+
+### How it works
+
+A colony with brood keeps the brood nest at about 35 °C, whatever the weather. Without brood, the
+hive temperature follows the weather. Every hour, the integration scores how far the colony keeps
+the hive above what the outdoor temperature alone would give, towards 35 °C. The day's score is
+lowered when the hive temperature swings along with the outdoor temperature.
+
+The estimate covers the last 24 hours and is updated every hour. It needs at least 18 hours with
+both temperatures, so a new hive shows *unknown* for most of its first day. The hours are stored,
+so a restart of Home Assistant doesn't start the count over.
+
+Like BroodMinder's own brood level, the percentage is relative. Compare hives with each other and
+over time, and learn what it means for your hives, for example "80% is usually 6 frames of
+brood". Below about 20% it's rough, because the brood can be far from the sensor.
+
+The formulas, settings and design decisions are described in detail in
+[BROOD_ESTIMATE.md](BROOD_ESTIMATE.md).
+
+### Settings
+
+Each T and TH hive has its own settings: go to **Settings** > **Devices & services** >
+**BroodMinder** and select **Configure** on the hive.
+
+* **Sensor position**
+  * *On top of the frames* (default): BroodMinder's standard placement, on the top bars near the
+    middle of the brood box. The temperature there drops off gradually as the brood nest shrinks
+    or moves away, so the estimate rises and falls with the amount of brood.
+  * *In the comb, between frames at brood height*: in the comb, the sensor reads about 35 °C
+    whenever brood surrounds it, however big the brood nest is. The estimate then shows whether
+    the brood nest reaches the sensor: high for most of the season, and dropping during a brood
+    break, after losing the queen, or when the brood nest shrinks in autumn.
+* **Outdoor temperature**  
+  A temperature sensor or weather entity. Leave it empty to use Home Assistant's weather: the
+  Met.no *Forecast Home* weather entity that Home Assistant creates during setup, or else your
+  only weather entity.
+
+### Outdoor temperature from Home Assistant's weather
+
+* Set your home location and elevation under **Settings** > **System** > **General**. Met.no
+  uses both, and without the elevation its temperature can be off in hilly areas.
+* The weather is for your home location. For hives somewhere else, choose a temperature sensor
+  near them in the hive's settings.
+
+When there's no outdoor temperature, Home Assistant shows a repair under **Settings** >
+**System** > **Repairs**:
+
+* *BroodMinder brood estimate has no outdoor temperature*: there's no Met.no *Forecast Home*
+  entity, and not exactly one other weather entity. Add the Met.no integration, or choose an
+  outdoor temperature in the hive's settings.
+* *Outdoor temperature for (hive) is unavailable*: the outdoor temperature has had no value for
+  more than 3 hours.
+
+### Brood sensor attributes
+
+* `status`: `ok`, or why the sensor shows *unknown*:
+  * `not_enough_data`: fewer than 18 of the last 24 hours have both temperatures.
+  * `no_outdoor_temperature`: there's no outdoor temperature, see above.
+  * `too_hot`: it was so warm outdoors that 35 °C in the hive says nothing about brood. In
+    climates that stay at about 31 °C or warmer day and night, the sensor often shows *unknown*.
+* `level`: the average hourly score, from 0 to 1.
+* `stability`: from 0 to 1, where 1 means the hive stays steady while the weather swings.
+* `hours_used`: the number of hours in the estimate.
+* `outdoor_entity`: the outdoor temperature in use.
+* `sensor_position`: the sensor position from the settings.
+
+### Likely brood break (experimental)
+
+T and TH hives also get a **Likely brood break since** sensor. It shows when a likely brood
+break started, and *unknown* when there's no likely brood break. Home Assistant shows the date
+as, for example, "5 days ago".
+
+Oxalic acid trickled between the combs only reaches the varroa mites on the bees, not those in
+capped cells. A treatment works best when the colony has no capped brood.
+
+How it works:
+
+* The colony keeps capped brood at 35 °C until the last bee has emerged: 21 days after the egg
+  was laid for workers, 24 for drones. So when the Brood % drops, the capped brood near the
+  sensor has already gone. The time without capped brood starts now, not three weeks later.
+* A likely brood break starts once the Brood % has stayed low for 2 days: 30% or less with the
+  sensor on top of the frames, 15% or less in the comb. The date shown is when the Brood % first
+  went low, so you can count the days of the break.
+* It ends, and the sensor goes back to *unknown*, once the Brood % has stayed above 45% (on top
+  of the frames) or 30% (in the comb) for a day.
+* Any low period counts, also the slow decline into the winter break.
+
+Before you treat:
+
+* Check a frame for capped brood. The sensor measures one spot: a small brood nest away from the
+  sensor, a winter cluster that moved, or brood restarting in winter also read as low. A likely
+  brood break is a reason to look, not proof that there's no capped brood.
+* Don't wait for the sensor to go back to *unknown*. The first new cells are capped about 8 days
+  after the queen starts laying again, and the sensor notices new brood late.
+* A queen that stops laying for less than about 3 weeks never shows as a brood break, because the
+  hive always has some brood.
+* The integration gives no treatment advice. Follow the instructions of your oxalic acid product
+  and the rules in your country.
+
+The thresholds are first estimates and will be tuned with real hives. The details are in
+[BROOD_ESTIMATE.md](BROOD_ESTIMATE.md), section 7.
+
+A notification when a likely brood break starts (replace the entity ID and the notify action
+with your own):
+
+```yaml
+automation:
+  - alias: "Hive 1: likely brood break"
+    triggers:
+      - trigger: state
+        entity_id: sensor.broodminder_th_00_00_01_likely_brood_break_since
+        not_from: unavailable
+        not_to:
+          - unknown
+          - unavailable
+    actions:
+      - action: notify.notify
+        data:
+          message: >
+            Hive 1 has likely had no brood near the sensor since
+            {{ as_timestamp(trigger.to_state.state) | timestamp_custom('%-d %B') }}.
+            Check a frame for capped brood before treating.
+```
 
 
 ## Installation and setup

@@ -1,10 +1,43 @@
 #!/usr/bin/env bash
 
+# Run the tests against each Home Assistant version, and write one coverage report for all of
+# them (htmlcov/ and coverage.xml), so code for one version only counts as covered too.
+#
+# Usage: scripts/test [minimum|latest] [pytest arguments]    (default: both)
+#   e.g. scripts/test latest tests/test_brood.py
+
 set -e
 
-# run tests with -s to display printouts and --log-cli-level to get logger output
-pytest --cov=./custom_components/broodminder --cov-branch --log-cli-level=INFO -s
+cd "$(dirname "$0")/.."
+source scripts/targets.sh
 
-# generate coverage report in html and xml
-coverage html
-coverage xml
+target_arg=""
+if [[ "$1" == "minimum" || "$1" == "latest" ]]; then
+    target_arg="$1"
+    shift
+fi
+targets=$(select_targets "${target_arg}")
+
+rm -f .coverage .coverage.*
+failed=()
+for target in ${targets}; do
+    venv=$(venv_of "${target}")
+    echo "=== Home Assistant ${target}: $("${venv}/bin/python" -c \
+        'from homeassistant.const import __version__; print(__version__)')"
+    # -s displays printouts and --log-cli-level shows logger output
+    if ! COVERAGE_FILE=".coverage.${target}" "${venv}/bin/pytest" \
+        --cov=./custom_components/broodminder --cov-branch --log-cli-level=INFO -s "$@"; then
+        failed+=("${target}")
+    fi
+done
+
+# Combine the coverage of all versions, and generate the report in html and xml
+"${venv}/bin/coverage" combine --quiet .coverage.*
+"${venv}/bin/coverage" report --skip-covered
+"${venv}/bin/coverage" html
+"${venv}/bin/coverage" xml
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+    echo "Tests failed against Home Assistant: ${failed[*]}" >&2
+    exit 1
+fi

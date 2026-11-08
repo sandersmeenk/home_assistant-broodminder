@@ -1,12 +1,17 @@
 """Tests for broodminder/sensor.py."""
 # ruff: noqa: PLR2004
 
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.util import slugify
 import pytest
 
 from custom_components.broodminder.ble_parser import parse_manufacturer_data
 from custom_components.broodminder.const import (
+    BATTERY_CHARGE_REMAINING,
+    BATTERY_VOLTAGE_BASED,
     MANUFACTURER,
     MANUFACTURER_ID,
+    SENSOR_BATT,
     SENSOR_TEMP,
     SENSOR_TEMP_RT,
     SENSOR_WEIGHT_L,
@@ -18,6 +23,7 @@ from custom_components.broodminder.const import (
     SWARM_STATE_DESCRIPTIONS,
 )
 from custom_components.broodminder.sensor import (
+    ENTITY_NAMES,
     sensor_update_to_bluetooth_data_update,
     swarm_state_description,
 )
@@ -88,6 +94,42 @@ def test_GIVEN_scale_w_57_WHEN_build_update_THEN_temperature_and_weight_have_pre
 
 
 @pytest.mark.parametrize(
+    ("raw_battery", "reading_key", "reading"),
+    [(80, BATTERY_VOLTAGE_BASED, 80), (110, BATTERY_CHARGE_REMAINING, 40)],
+    ids=["voltage_based", "charge_remaining"],
+)
+def test_GIVEN_battery_byte_WHEN_build_update_THEN_reading_for_battery_entity_only(
+    raw_battery: int, reading_key: str, reading: int
+) -> None:
+    """Verifies each kind of battery reading goes to the one Battery entity, not its own."""
+
+    payload = bytearray(15)
+    payload[0] = 56  # model
+    payload[1] = 2  # v.minor
+    payload[2] = 1  # v.major
+    payload[4] = raw_battery  # battery % or charge remaining: 100 + percent / 4
+
+    adv = {MANUFACTURER_ID: bytes(payload)}
+    parsed = parse_manufacturer_data("11:22:33:44:55:66", adv)
+    assert parsed is not None
+
+    update = sensor_update_to_bluetooth_data_update(parsed)
+    values = {key.key: value for key, value in update.entity_data.items()}
+    names = {key.key: name for key, name in update.entity_names.items()}
+    descriptions = {
+        key.key: description for key, description in update.entity_descriptions.items()
+    }
+
+    battery_readings = {BATTERY_VOLTAGE_BASED, BATTERY_CHARGE_REMAINING}
+    assert {key for key in values if key in battery_readings} == {reading_key}
+    assert values[reading_key] == reading
+    assert SENSOR_BATT not in values
+    assert names[SENSOR_BATT] == "Battery"
+    assert descriptions[SENSOR_BATT].device_class == SensorDeviceClass.BATTERY
+    assert not battery_readings & set(descriptions)
+
+
+@pytest.mark.parametrize(
     ("swarm_state", "expected"),
     [
         (0, "Stopped"),
@@ -111,3 +153,35 @@ def test_GIVEN_all_documented_swarm_states_WHEN_describe_THEN_each_has_own_descr
 
     assert SWARM_STATE_DESCRIPTION_UNKNOWN not in descriptions
     assert len(set(descriptions)) == len(SWARM_STATE_DESCRIPTIONS)
+
+
+# Names before 0.5.0, in title case; their entity IDs must stay the same
+TITLE_CASE_NAMES = {
+    "temperature": "Temperature",
+    "temperature_realtime": "Realtime Temp",
+    "humidity": "Humidity",
+    "battery": "Battery",
+    "sample_count": "Sample count",
+    "weight_left": "Weight Left",
+    "weight_right": "Weight Right",
+    "weight_left_2": "Weight Left 2",
+    "weight_right_2": "Weight Right 2",
+    "weight_realtime_total": "Weight Realtime",
+    "swarm_state": "Swarm State",
+    "swarm_time": "Swarm Time",
+}
+
+
+def test_GIVEN_entity_names_WHEN_checked_THEN_sentence_case() -> None:
+    """Verifies each name capitalises only its first word, as Home Assistant's own names do."""
+
+    for name in ENTITY_NAMES.values():
+        assert name == name[0].upper() + name[1:].lower()
+
+
+def test_GIVEN_title_case_names_WHEN_sentence_case_THEN_entity_ids_unchanged() -> None:
+    """Verifies the sentence case names give the same entity IDs as the title case ones."""
+
+    assert set(ENTITY_NAMES) == set(TITLE_CASE_NAMES)
+    for key, name in ENTITY_NAMES.items():
+        assert slugify(name) == slugify(TITLE_CASE_NAMES[key])

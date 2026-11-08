@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 import logging
 from typing import Any
 
-from homeassistant import config_entries
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
     PassiveBluetoothDataUpdate,
@@ -20,17 +20,33 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import PERCENTAGE, UnitOfMass, UnitOfTemperature
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
 
-from .ble_parser import ManufacturerData, extract_entities
+from . import BroodMinderConfigEntry
+from .ble_parser import ManufacturerData, device_name, extract_entities, model_name
+from .brood_tracker import BroodTracker
 from .const import (
+    ATTR_CHARGE_REMAINING,
     ATTR_DESCRIPTION,
+    ATTR_HOURS_USED,
+    ATTR_LEVEL,
+    ATTR_OUTDOOR_ENTITY,
+    ATTR_SENSOR_POSITION,
+    ATTR_STABILITY,
+    ATTR_STATUS,
+    ATTR_VOLTAGE_BASED,
+    BATTERY_CHARGE_REMAINING,
+    BATTERY_VOLTAGE_BASED,
+    CONF_MODEL,
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATT,
+    SENSOR_BROOD,
+    SENSOR_BROOD_BREAK,
     SENSOR_HUM,
     SENSOR_SAMPLE_COUNT,
     SENSOR_SWARM_STATE,
@@ -105,9 +121,40 @@ class BMDescriptions:
     swarm_time: SensorEntityDescription = SensorEntityDescription(
         key=SENSOR_SWARM_TIME, icon="mdi:clock-outline"
     )
+    brood: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_BROOD,
+        icon="mdi:hexagon-multiple",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    )
+    brood_break: SensorEntityDescription = SensorEntityDescription(
+        key=SENSOR_BROOD_BREAK,
+        icon="mdi:hexagon-multiple-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    )
 
 
 DESCRIPTIONS = BMDescriptions()
+
+# Names of the entities the processor creates, in sentence case like Home Assistant's own; the
+# entity ID and unique ID come from the key, so a name change doesn't break them
+ENTITY_NAMES: dict[str, str] = {
+    SENSOR_TEMP: "Temperature",
+    SENSOR_TEMP_RT: "Realtime temp",
+    SENSOR_HUM: "Humidity",
+    SENSOR_BATT: "Battery",
+    SENSOR_SAMPLE_COUNT: "Sample count",
+    SENSOR_WEIGHT_L: "Weight left",
+    SENSOR_WEIGHT_R: "Weight right",
+    SENSOR_WEIGHT_L2: "Weight left 2",
+    SENSOR_WEIGHT_R2: "Weight right 2",
+    SENSOR_WEIGHT_REALTIME: "Weight realtime",
+    SENSOR_SWARM_STATE: "Swarm state",
+    SENSOR_SWARM_TIME: "Swarm time",
+}
+
+# Keys of the entities the processor creates; restored data may hold keys an older build had
+PROCESSOR_ENTITY_KEYS = frozenset(ENTITY_NAMES)
 
 
 def swarm_state_description(swarm_state: int) -> str:
@@ -116,9 +163,13 @@ def swarm_state_description(swarm_state: int) -> str:
 
 
 def sensor_update_to_bluetooth_data_update(
-    parsed: ManufacturerData,
+    parsed: ManufacturerData | None,
 ) -> PassiveBluetoothDataUpdate[Any]:
     """Build a PassiveBluetoothDataUpdate for the processor."""
+    if parsed is None:
+        # Advertisement without readable BroodMinder data: keep the last values
+        return PassiveBluetoothDataUpdate()
+
     entities = extract_entities(parsed)
     device = DeviceInfo(
         identifiers={(DOMAIN, parsed.device_id)},
@@ -133,62 +184,50 @@ def sensor_update_to_bluetooth_data_update(
     entity_data: dict[PassiveBluetoothEntityKey, Any] = {}
     entity_names: dict[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: Any, description: SensorEntityDescription, name: str) -> None:
+    def add(key: str, value: Any, description: SensorEntityDescription) -> None:
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
-        entity_names[ek] = name
+        entity_names[ek] = ENTITY_NAMES[key]
 
     # Temperature
     if SENSOR_TEMP in entities:
-        add(SENSOR_TEMP, entities[SENSOR_TEMP], DESCRIPTIONS.temperature, "Temperature")
+        add(SENSOR_TEMP, entities[SENSOR_TEMP], DESCRIPTIONS.temperature)
     if SENSOR_TEMP_RT in entities:
-        add(
-            SENSOR_TEMP_RT, entities[SENSOR_TEMP_RT], DESCRIPTIONS.temperature_rt, "Realtime Temp"
-        )
+        add(SENSOR_TEMP_RT, entities[SENSOR_TEMP_RT], DESCRIPTIONS.temperature_rt)
 
     # Humidity / Battery / sample count
     if SENSOR_HUM in entities:
-        add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity, "Humidity")
-    if SENSOR_BATT in entities:
-        add(SENSOR_BATT, entities[SENSOR_BATT], DESCRIPTIONS.battery, "Battery")
+        add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity)
+    if BATTERY_VOLTAGE_BASED in entities or BATTERY_CHARGE_REMAINING in entities:
+        # The Battery entity keeps both kinds of reading; they get no entities of their own
+        battery = PassiveBluetoothEntityKey(key=SENSOR_BATT, device_id=parsed.device_id)
+        entity_descriptions[battery] = DESCRIPTIONS.battery
+        entity_names[battery] = ENTITY_NAMES[SENSOR_BATT]
+        for key in (BATTERY_VOLTAGE_BASED, BATTERY_CHARGE_REMAINING):
+            if key in entities:
+                reading = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
+                entity_data[reading] = entities[key]
     if SENSOR_SAMPLE_COUNT in entities:
-        add(
-            SENSOR_SAMPLE_COUNT,
-            entities[SENSOR_SAMPLE_COUNT],
-            DESCRIPTIONS.sample_count,
-            "Sample count",
-        )
+        add(SENSOR_SAMPLE_COUNT, entities[SENSOR_SAMPLE_COUNT], DESCRIPTIONS.sample_count)
 
     # Weights
     if SENSOR_WEIGHT_L in entities:
-        add(SENSOR_WEIGHT_L, entities[SENSOR_WEIGHT_L], DESCRIPTIONS.weight_l, "Weight Left")
+        add(SENSOR_WEIGHT_L, entities[SENSOR_WEIGHT_L], DESCRIPTIONS.weight_l)
     if SENSOR_WEIGHT_R in entities:
-        add(SENSOR_WEIGHT_R, entities[SENSOR_WEIGHT_R], DESCRIPTIONS.weight_r, "Weight Right")
+        add(SENSOR_WEIGHT_R, entities[SENSOR_WEIGHT_R], DESCRIPTIONS.weight_r)
     if SENSOR_WEIGHT_L2 in entities:
-        add(SENSOR_WEIGHT_L2, entities[SENSOR_WEIGHT_L2], DESCRIPTIONS.weight_l2, "Weight Left 2")
+        add(SENSOR_WEIGHT_L2, entities[SENSOR_WEIGHT_L2], DESCRIPTIONS.weight_l2)
     if SENSOR_WEIGHT_R2 in entities:
-        add(
-            SENSOR_WEIGHT_R2, entities[SENSOR_WEIGHT_R2], DESCRIPTIONS.weight_r2, "Weight Right 2"
-        )
+        add(SENSOR_WEIGHT_R2, entities[SENSOR_WEIGHT_R2], DESCRIPTIONS.weight_r2)
     if SENSOR_WEIGHT_REALTIME in entities:
-        add(
-            SENSOR_WEIGHT_REALTIME,
-            entities[SENSOR_WEIGHT_REALTIME],
-            DESCRIPTIONS.weight_rt,
-            "Weight Realtime",
-        )
+        add(SENSOR_WEIGHT_REALTIME, entities[SENSOR_WEIGHT_REALTIME], DESCRIPTIONS.weight_rt)
 
     # Swarm state & Swarm time
     if SENSOR_SWARM_STATE in entities:
-        add(
-            SENSOR_SWARM_STATE,
-            entities[SENSOR_SWARM_STATE],
-            DESCRIPTIONS.swarm_state,
-            "Swarm State",
-        )
+        add(SENSOR_SWARM_STATE, entities[SENSOR_SWARM_STATE], DESCRIPTIONS.swarm_state)
     if SENSOR_SWARM_TIME in entities:
-        add(SENSOR_SWARM_TIME, entities[SENSOR_SWARM_TIME], DESCRIPTIONS.swarm_time, "Swarm Time")
+        add(SENSOR_SWARM_TIME, entities[SENSOR_SWARM_TIME], DESCRIPTIONS.swarm_time)
 
     return PassiveBluetoothDataUpdate(
         devices={parsed.device_id: device},
@@ -200,22 +239,127 @@ def sensor_update_to_bluetooth_data_update(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: config_entries.ConfigEntry,
+    entry: BroodMinderConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the BroodMinder sensors."""
     processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
 
+    @callback
+    def _async_add_processor_entities(entities: Iterable[BroodMinderSensorEntity]) -> None:
+        # Leave out keys no longer sent, such as a Charge remaining sensor of an older build
+        async_add_entities(
+            [entity for entity in entities if entity.entity_key.key in PROCESSOR_ENTITY_KEYS]
+        )
+
     # Create entities when new keys appear
     entry.async_on_unload(
-        processor.async_add_entities_listener(BroodMinderSensorEntity, async_add_entities)
+        processor.async_add_entities_listener(_create_entity, _async_add_processor_entities)
     )
 
-    # Get coordinator stored by __init__.py
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    # Coordinator and brood tracker set up by __init__.py
+    data = entry.runtime_data
 
-    # Register the processor with the coordinator
-    entry.async_on_unload(coordinator.async_register_processor(processor))
+    # Register the processor with the coordinator; with the description class, Home Assistant
+    # restores the last values after a restart, so sensors don't wait for the next advertisement
+    entry.async_on_unload(
+        data.coordinator.async_register_processor(processor, SensorEntityDescription)
+    )
+
+    if data.brood_tracker is not None:
+        address, model = data.coordinator.address, entry.data[CONF_MODEL]
+        async_add_entities(
+            [
+                BroodMinderBroodSensor(data.brood_tracker, address, model),
+                BroodMinderBroodBreakSensor(data.brood_tracker, address, model),
+            ]
+        )
+
+
+class BroodTrackerSensor(SensorEntity):
+    """Sensor on a hive's device whose value comes from the hive's brood tracker."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(self, tracker: BroodTracker, address: str, model: int) -> None:
+        """Initialize the sensor on the hive's device, also before it has advertised."""
+        self._tracker = tracker
+        self._attr_unique_id = f"{address}-{self.entity_description.key}"
+        self._attr_device_info = DeviceInfo(
+            connections={(CONNECTION_BLUETOOTH, address)},
+            manufacturer=MANUFACTURER,
+            name=device_name(address, model),
+            model=model_name(model),
+        )
+
+
+class BroodMinderBroodSensor(BroodTrackerSensor):
+    """Brood estimate of a hive, from its temperature and the outdoor temperature."""
+
+    _attr_name = "Brood"
+    entity_description = DESCRIPTIONS.brood
+
+    async def async_added_to_hass(self) -> None:
+        """Update the state after every sample."""
+        self.async_on_remove(self._tracker.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the brood estimate in percent."""
+        return self._tracker.estimate.brood_percent
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return how the estimate was made, and why it may be unknown."""
+        estimate = self._tracker.estimate
+        return {
+            ATTR_STATUS: self._tracker.status,
+            ATTR_LEVEL: None if estimate.level is None else round(estimate.level, 2),
+            ATTR_STABILITY: None if estimate.stability is None else round(estimate.stability, 2),
+            ATTR_HOURS_USED: estimate.hours_used,
+            ATTR_OUTDOOR_ENTITY: self._tracker.outdoor_entity_id,
+            ATTR_SENSOR_POSITION: self._tracker.position,
+        }
+
+
+class BroodMinderBroodBreakSensor(BroodTrackerSensor):
+    """When a hive's likely brood break started, or unknown without one."""
+
+    _attr_name = "Likely brood break since"
+    entity_description = DESCRIPTIONS.brood_break
+
+    def __init__(self, tracker: BroodTracker, address: str, model: int) -> None:
+        """Initialize the sensor with the brood break the tracker loaded."""
+        super().__init__(tracker, address, model)
+        self._attr_native_value = self._since()
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the tracker's samples."""
+        self.async_on_remove(self._tracker.async_add_listener(self._async_sampled))
+
+    @callback
+    def _async_sampled(self) -> None:
+        """Write the state only when a break starts or ends, so the recorder stays idle."""
+        since = self._since()
+        if since != self._attr_native_value:
+            self._attr_native_value = since
+            self.async_write_ha_state()
+
+    def _since(self) -> datetime | None:
+        since = self._tracker.brood_break.since
+        return None if since is None else dt_util.utc_from_timestamp(since)
+
+
+def _create_entity(
+    processor: PassiveBluetoothDataProcessor[Any | None, ManufacturerData],
+    entity_key: PassiveBluetoothEntityKey,
+    description: SensorEntityDescription,
+) -> BroodMinderSensorEntity:
+    """Create the entity for a key; Battery combines two kinds of reading."""
+    if entity_key.key == SENSOR_BATT:
+        return BroodMinderBatterySensor(processor, entity_key, description)
+    return BroodMinderSensorEntity(processor, entity_key, description)
 
 
 class BroodMinderSensorEntity(
@@ -224,12 +368,26 @@ class BroodMinderSensorEntity(
 ):
     """Entity for a BroodMinder reading."""
 
+    def __init__(
+        self,
+        processor: PassiveBluetoothDataProcessor[Any | None, ManufacturerData],
+        entity_key: PassiveBluetoothEntityKey,
+        description: SensorEntityDescription,
+    ) -> None:
+        """Create the entity with the current name, not one restored from an older build."""
+        super().__init__(processor, entity_key, description)
+        self._attr_name = ENTITY_NAMES.get(entity_key.key, self._attr_name)
+
     # Provide the current value from the processor
     @property
     def native_value(self) -> StateType | datetime:
         """Return the latest value for this sensor."""
         # For timestamp sensors, ensure extract_entities() returns a datetime
-        return self.processor.entity_data.get(self.entity_key)
+        value = self.processor.entity_data.get(self.entity_key)
+        if self.entity_key.key == SENSOR_SWARM_TIME and isinstance(value, str):
+            # Restored after a restart: the saved values hold the time as text
+            return dt_util.parse_datetime(value)
+        return value
 
     # Attributes
     @property
@@ -305,3 +463,48 @@ class BroodMinderSensorEntity(
             return SensorStateClass.MEASUREMENT
         # timestamp and swarm_state should not have a state_class
         return None
+
+
+class BroodMinderBatterySensor(BroodMinderSensorEntity):
+    """Battery: the lower of the last voltage based and charge remaining readings.
+
+    Newer firmware sends charge remaining in place of the voltage based reading, roughly every
+    other reading. The processor keeps the last of each, and restores them after a restart.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        """Follow both kinds of reading, which have no entities of their own."""
+        await super().async_added_to_hass()
+        for key in (BATTERY_VOLTAGE_BASED, BATTERY_CHARGE_REMAINING):
+            self.async_on_remove(
+                self.processor.async_add_entity_key_listener(
+                    self._handle_processor_update,
+                    PassiveBluetoothEntityKey(key, self.entity_key.device_id),
+                )
+            )
+
+    def _reading(self, key: str) -> int | None:
+        return self.processor.entity_data.get(
+            PassiveBluetoothEntityKey(key, self.entity_key.device_id)
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the lower of the readings."""
+        readings = [
+            reading
+            for reading in (
+                self._reading(BATTERY_VOLTAGE_BASED),
+                self._reading(BATTERY_CHARGE_REMAINING),
+            )
+            if reading is not None
+        ]
+        return min(readings, default=None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the readings behind the battery level."""
+        return {
+            ATTR_VOLTAGE_BASED: self._reading(BATTERY_VOLTAGE_BASED),
+            ATTR_CHARGE_REMAINING: self._reading(BATTERY_CHARGE_REMAINING),
+        }

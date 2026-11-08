@@ -5,6 +5,53 @@ All notable changes to the BroodMinder integration for Home Assistant are listed
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+For a more detailed description of the features, see the README.md
+
+
+## [0.5.0] - Unreleased
+
+### Added
+
+- (Experimental) BroodMinder-T and -TH hives have a new Brood sensor: an estimate from 0 to 100% of the brood
+  near the sensor, from the hive temperature and the outdoor temperature. It needs no scale. See
+  "Brood estimate" in the README for how it works and what the percentage means.
+- Each T and TH hive has settings (**Configure** on the hive): where the sensor sits in the
+  hive, and which outdoor temperature to use. By default the outdoor temperature comes from
+  Home Assistant's weather.
+- (Experimental) BroodMinder-T and -TH hives have a new **Likely brood break since** sensor: when the Brood
+  estimate has stayed low for two days, it shows the date the brood near the sensor likely ran
+  out. It helps you time an oxalic acid treatment, which works best when there's no capped
+  brood. See "Likely brood break" in the README.
+- When the brood estimate has no outdoor temperature, a repair under **Settings** > **System** >
+  **Repairs** explains how to fix it.
+
+### Changed
+
+- Newer BroodMinder firmware also sends the remaining battery life, based on how long the device
+  has been running, in place of roughly every other battery voltage reading. Battery now shows
+  the lower of the two, so a battery that's running low by either measure shows. The last
+  reading of each kind is shown as the `voltage_based` and `charge_remaining` attributes, and
+  Home Assistant remembers both across a restart.
+- A battery reading the integration can't make sense of is now ignored instead of being shown as
+  100%. Battery keeps its last value.
+- After a restart of Home Assistant, BroodMinder sensors show their last values straight away,
+  instead of being unavailable until each BroodMinder broadcasts again.
+- Sensor names only capitalise their first word, like Home Assistant's own sensors: for example
+  Swarm time instead of Swarm Time, and Weight left instead of Weight Left. Entity IDs stay the
+  same, so automations, scripts and dashboards keep working. Names you changed yourself are
+  kept.
+
+### Fixed
+
+- A BroodMinder broadcast that is too short to read no longer puts an error in the Home
+  Assistant log. It's now ignored and your sensors keep their last values.
+- On newer firmware, Battery no longer jumps to 100% on every other reading. Its history from
+  before this version still shows those jumps.
+
+### Internal
+
+- Internal fixes and cleanups.
+
 ## [0.4.0] - 2026-10-31
 
 ### Added
@@ -100,6 +147,7 @@ First release.
 - Sensors for battery, temperature, realtime temperature, humidity, weight (per scale side
   and total), sample count, swarm state and swarm time, depending on the BroodMinder model.
 
+[0.5.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.4.0...develop
 [0.4.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/sandersmeenk/home_assistant-broodminder/releases/tag/0.2.0

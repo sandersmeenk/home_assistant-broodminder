@@ -1,0 +1,8 @@
+# Development tools, shared by both Home Assistant versions (minimum.txt and latest.txt)
+colorlog==6.9.0
+pip>=25.0
+ruff==0.13.1
+pytest
+pytest-asyncio
+pytest-mock
+pytest-cov

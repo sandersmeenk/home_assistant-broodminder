@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 
+# Run Home Assistant with this integration on http://localhost:8123.
+#
+# Usage: scripts/develop [minimum|latest]    (default: minimum)
+#
+# Each version has its own configuration directory, config/<version>, sharing
+# config/configuration.yaml: a newer Home Assistant migrates the files in .storage to versions
+# an older one can't read.
+
 set -e
 
 cd "$(dirname "$0")/.."
+source scripts/targets.sh
 
-# Create config dir if not present
-if [[ ! -d "${PWD}/config" ]]; then
-    mkdir -p "${PWD}/config"
-    hass --config "${PWD}/config" --script ensure_config
+target=$(select_targets "${1:-minimum}")
+venv=$(venv_of "${target}")
+config="${PWD}/config/${target}"
+
+if [[ ! -d "${config}" ]]; then
+    mkdir -p "${config}"
+    ln -s ../configuration.yaml "${config}/configuration.yaml"
 fi
 
 # Set the path to custom_components
@@ -17,4 +29,4 @@ fi
 export PYTHONPATH="${PYTHONPATH}:${PWD}/custom_components"
 
 # Start Home Assistant
-hass --config "${PWD}/config" --debug
+"${venv}/bin/hass" --config "${config}" --debug

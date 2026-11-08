@@ -1,0 +1,51 @@
+name: Bump latest Home Assistant
+
+# Weekly, update requirements/latest.txt to the newest Home Assistant the test plugin supports,
+# and open a pull request into develop when it changed. CI on that branch shows whether the new
+# Home Assistant breaks anything.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  # To start CI on the branch: a push or pull request made with GITHUB_TOKEN doesn't
+  actions: write
+
+jobs:
+  bump:
+    name: Bump
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: bump-latest-home-assistant
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # A schedule runs on the default branch (main); development happens on develop
+      - uses: actions/checkout@v5
+        with:
+          ref: develop
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: scripts/bump_latest.py
+      - name: Open a pull request
+        run: |
+          if git diff --quiet requirements/latest.txt; then
+            echo "requirements/latest.txt is up to date"
+            exit 0
+          fi
+          version=$(sed -n 's/^homeassistant==//p' requirements/latest.txt)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --create "$BRANCH"
+          git commit --all --message "requirements: test against Home Assistant $version"
+          git push --force origin "$BRANCH"
+          if ! gh pr view "$BRANCH" > /dev/null 2>&1; then
+            gh pr create --base develop --head "$BRANCH" \
+              --title "Test against Home Assistant $version" \
+              --body "Updates requirements/latest.txt with scripts/bump_latest.py. CI runs on this branch: if the latest Home Assistant job fails, the integration needs changes for Home Assistant $version."
+          fi
+          gh workflow run ci.yml --ref "$BRANCH"

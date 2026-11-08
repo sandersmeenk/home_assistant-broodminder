@@ -1,5 +1,7 @@
 """Constants for the BroodMinder integration."""
 
+from datetime import timedelta
+
 DOMAIN = "broodminder"
 
 MANUFACTURER_ID = 0x028D  # IF, LLC (BroodMinder)
@@ -51,6 +53,9 @@ MODEL_DIY = {58}
 MODEL_HUB_WIFI = {60}
 MODEL_BEEDAR = {63}
 
+# Models measuring in-hive temperature, the only ones with a brood estimate
+BROOD_MODELS = MODEL_T | MODEL_TH
+
 # Models with SHT-like temperature formula:
 SPECIAL_TEMP_MODELS_F = {41, 42, 43}
 
@@ -69,6 +74,9 @@ EXTRA_WEIGHT_MODELS = {49, 57, 58}
 # Scale W (43) sends no total: it measures half the hive, so total = 2 x (left + right)
 CALCULATED_TOTAL_WEIGHT_MODELS = {43}
 HALF_HIVE_WEIGHT_FACTOR = 2
+
+# Raw temperature value without a reading
+TEMP_RAW_INVALID = 0xFFFF
 
 # Raw weight values without a reading
 WEIGHT_RAW_NO_READING = 0xFFFF
@@ -95,6 +103,9 @@ SENSOR_TEMP = "temperature"
 SENSOR_TEMP_RT = "temperature_realtime"
 SENSOR_HUM = "humidity"
 SENSOR_BATT = "battery"
+# Readings behind the Battery sensor, passed on without entities of their own
+BATTERY_VOLTAGE_BASED = "battery_voltage_based"
+BATTERY_CHARGE_REMAINING = "battery_charge_remaining"
 
 SENSOR_SAMPLE_COUNT = "sample_count"
 SENSOR_WEIGHT_L = "weight_left"
@@ -106,6 +117,10 @@ SENSOR_SWARM_STATE = "swarm_state"
 SENSOR_SWARM_TIME = "swarm_time"  # may be time since boot if not synced
 # Older swarm times are time since boot: the clock was never set by a Bees app sync
 SWARM_TIME_MIN_VALID_UNIX = 1420070400  # 2015-01-01T00:00:00Z
+
+# Battery attributes: the last reading of each kind, the lower of which is the battery level
+ATTR_VOLTAGE_BASED = "voltage_based"
+ATTR_CHARGE_REMAINING = "charge_remaining"
 
 # Swarm state attribute: human readable SwarmMinder state
 ATTR_DESCRIPTION = "description"
@@ -129,4 +144,75 @@ SWARM_STATE_DESCRIPTION_UNKNOWN = "Unknown"
 SENSOR_PERCENTAGE_MINIMUM = 0
 SENSOR_PERCENTAGE_MAXIMUM = 100
 
+# Newer firmware sends charge remaining (runtime based) in the battery byte as 100 + percent / 4
+CHARGE_REMAINING_RAW_MINIMUM = 101
+CHARGE_REMAINING_RAW_MAXIMUM = 125
+CHARGE_REMAINING_RAW_SCALE = 4
+
 MANUFACTURER = "BroodMinder"
+
+# Config entry data: the model id, so a hive gets its brood sensor before it advertises
+CONF_MODEL = "model"
+
+# Hive settings (config entry options)
+CONF_SENSOR_POSITION = "sensor_position"
+CONF_OUTDOOR_ENTITY = "outdoor_entity"
+POSITION_TOP_OF_FRAMES = "top_of_frames"  # BroodMinder's standard placement
+POSITION_IN_COMB = "in_comb"  # between frames, at brood height
+SENSOR_POSITIONS = [POSITION_TOP_OF_FRAMES, POSITION_IN_COMB]
+DEFAULT_SENSOR_POSITION = POSITION_TOP_OF_FRAMES
+
+# Brood estimate
+SENSOR_BROOD = "brood"
+BROOD_TEMP_C = 35.0  # temperature the colony keeps the brood nest at
+# Below this an hour counts as no brood; on top of the frames runs cooler than in the comb
+BROOD_EDGE_TEMP_C: dict[str, float] = {POSITION_TOP_OF_FRAMES: 30.0, POSITION_IN_COMB: 32.0}
+# How much warmer than outdoors the colony keeps the hive without raising brood
+COLONY_WARMING_C = 4.0
+# A hive swinging at most this share of the outdoor swing counts as fully stable
+STABLE_SWING_RATIO = 0.2
+# On days with a smaller outdoor swing (overcast), stability tells nothing and is skipped
+MIN_OUTDOOR_SWING_C = 3.0
+BROOD_WINDOW_HOURS = 24
+BROOD_MIN_HOURS = 18  # hours in the window with both temperatures
+BROOD_HISTORY_HOURS = 48  # hours kept in storage
+BROOD_SAMPLE_INTERVAL = timedelta(minutes=5)
+# Increase with every change of the brood history file's format, and migrate the previous one
+BROOD_STORAGE_VERSION = 2
+# Short outages of the outdoor temperature are normal; only longer ones raise a repair
+OUTDOOR_UNAVAILABLE_ISSUE_AFTER = timedelta(hours=3)
+
+# Likely brood break: the Brood % stays low for days
+SENSOR_BROOD_BREAK = "brood_break"
+# At or below this an estimate is low; a broodless hive scores higher on top of the frames
+BROOD_BREAK_LOW_PERCENT: dict[str, int] = {POSITION_TOP_OF_FRAMES: 30, POSITION_IN_COMB: 15}
+# Above this an estimate counts towards the end of a break; higher than low, so it can't flicker
+BROOD_BREAK_END_PERCENT: dict[str, int] = {POSITION_TOP_OF_FRAMES: 45, POSITION_IN_COMB: 30}
+BROOD_BREAK_START_HOURS = 48  # low estimates that start a break
+BROOD_BREAK_END_HOURS = 24  # estimates in a row above the end level that end it
+# After a longer time without an estimate, a count in progress starts over: an outage of a day,
+# plus the hours the window needs before the next estimate
+BROOD_BREAK_MAX_GAP_HOURS = BROOD_WINDOW_HOURS + BROOD_MIN_HOURS
+
+# Automatic outdoor temperature: Met.no's weather entity for the home location, created
+# during onboarding
+MET_DOMAIN = "met"
+MET_HOME_UNIQUE_ID = "home"
+
+# Brood status: why the estimate may be unknown
+BROOD_STATUS_OK = "ok"
+BROOD_STATUS_NOT_ENOUGH_DATA = "not_enough_data"
+BROOD_STATUS_TOO_HOT = "too_hot"
+BROOD_STATUS_NO_OUTDOOR_TEMPERATURE = "no_outdoor_temperature"
+
+# Brood sensor attributes
+ATTR_STATUS = "status"
+ATTR_LEVEL = "level"
+ATTR_STABILITY = "stability"
+ATTR_HOURS_USED = "hours_used"
+ATTR_OUTDOOR_ENTITY = "outdoor_entity"
+ATTR_SENSOR_POSITION = "sensor_position"
+
+# Repair issues
+ISSUE_NO_WEATHER_ENTITY = "no_weather_entity"
+ISSUE_OUTDOOR_UNAVAILABLE = "outdoor_temperature_unavailable"

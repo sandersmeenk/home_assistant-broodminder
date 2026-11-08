@@ -1,0 +1,21 @@
+# python: >=3.14.2,<3.15
+#
+# The newest Home Assistant the test plugin supports. Written by
+# scripts/bump_latest.py: don't edit. The line above is the Python version
+# scripts/setup creates .venv-latest with.
+-r dev.txt
+homeassistant==2026.10.4
+# Must match homeassistant: each plugin release is built against one Home Assistant
+# release
+pytest-homeassistant-custom-component==0.13.375
+# Requirements of the Home Assistant integrations ours depends on, which the tests
+# load: bluetooth, bluetooth_adapters and their dependencies
+aiousbwatcher==1.1.2
+bleak-retry-connector==4.7.1
+bleak==3.0.2
+bluetooth-adapters==2.4.0
+bluetooth-auto-recovery==1.6.4
+bluetooth-data-tools==1.29.24
+dbus-fast==5.0.22
+habluetooth==7.1.2
+serialx==1.11.0

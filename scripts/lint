@@ -4,12 +4,19 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+# Ruff is the same for both Home Assistant versions: use the one scripts/setup installed, or the
+# one on the path (CI)
+ruff="ruff"
+if [[ -x .venv-minimum/bin/ruff ]]; then
+    ruff=".venv-minimum/bin/ruff"
+fi
+
 if [ "$1" = "ci" ]; then
     # Don't try to fix errors, just fail
-    ruff format . --diff
-    ruff check .
+    "${ruff}" format . --diff
+    "${ruff}" check .
 else
     # Auto-fix as much as possible
-    ruff format .
-    ruff check . --fix
+    "${ruff}" format .
+    "${ruff}" check . --fix
 fi
