@@ -41,11 +41,10 @@
                 "files.eol": "\n",
                 "files.trimTrailingWhitespace": true,
                 "python.analysis.autoImportCompletions": true,
-                "python.analysis.extraPaths": [
-                    "/home/vscode/.local/lib/python3.13/site-packages"
-                ],
                 "python.analysis.typeCheckingMode": "basic",
-                "python.defaultInterpreterPath": "/usr/local/bin/python"
+                // The oldest supported Home Assistant, so completions only offer what it has.
+                // Select .venv-latest to check against the newest one.
+                "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv-minimum/bin/python"
             }
         }
     },

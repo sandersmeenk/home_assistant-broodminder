@@ -1,7 +1,31 @@
 #!/usr/bin/env bash
 
+# Create a virtual environment per Home Assistant version, .venv-minimum and .venv-latest, from
+# requirements/<version>.txt. Running it again starts both from scratch.
+#
+# Usage: scripts/setup [minimum|latest]    (default: both)
+
 set -e
 
 cd "$(dirname "$0")/.."
+source scripts/targets.sh
 
-python3 -m pip install --requirement requirements.txt --requirement requirements_test.txt
+targets=$(select_targets "$1")
+
+# uv creates the environments and installs the Python versions they need. CI installs its own;
+# here a recent one is needed to know the latest Python releases.
+if [[ -z "${CI}" ]]; then
+    python3 -m pip install --user --upgrade --quiet uv
+    # Also when ~/.local/bin isn't on the path yet, as in a new devcontainer
+    uv() { python3 -m uv "$@"; }
+fi
+
+# The workspace and uv's cache are on different filesystems in the devcontainer, so uv can't
+# hardlink
+export UV_LINK_MODE=copy
+
+for target in ${targets}; do
+    echo "Setting up .venv-${target} (Home Assistant ${target})"
+    uv venv --clear --python "$(python_version "${target}")" ".venv-${target}"
+    uv pip install --python ".venv-${target}/bin/python" --requirement "requirements/${target}.txt"
+done

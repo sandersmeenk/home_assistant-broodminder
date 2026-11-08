@@ -1,0 +1,15 @@
+# python: >=3.13.2,<3.14
+#
+# The oldest Home Assistant this integration supports: the "homeassistant" version in hacs.json.
+# Change it only together with hacs.json. The line above is the Python version scripts/setup
+# creates .venv-minimum with.
+-r dev.txt
+homeassistant==2025.9.4
+# Must match homeassistant: each plugin release is built against one Home Assistant release
+pytest-homeassistant-custom-component==0.13.281
+# aiodns 3.5.0 (pinned by homeassistant) is incompatible with pycares 5.x
+pycares<5
+# Requirements of Home Assistant's bluetooth and usb integrations, which the tests load
+aiolimiter==1.2.1
+aiousbwatcher==1.1.1
+pyserial==3.5

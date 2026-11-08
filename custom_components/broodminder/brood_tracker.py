@@ -44,6 +44,7 @@ from .brood import (
     estimate_brood,
     hour_start,
 )
+from .compat import UnsupportedStorageVersionError, async_get_device_by_connection
 from .const import (
     BROOD_HISTORY_HOURS,
     BROOD_SAMPLE_INTERVAL,
@@ -131,21 +132,33 @@ def _check_stored_types(stored: HourlyTemperatures | BroodBreak) -> None:
 class UnsupportedBroodHistoryError(Exception):
     """The brood history file has a storage version this code doesn't know."""
 
-    def __init__(self, major_version: int, minor_version: int) -> None:
-        """Initialize with the file's storage version."""
-        self.version = f"{major_version}.{minor_version}"
+    def __init__(self, major_version: int, minor_version: int | None = None) -> None:
+        """Initialize with the file's storage version: only the major one when it's newer."""
+        self.version = (
+            str(major_version) if minor_version is None else f"{major_version}.{minor_version}"
+        )
         super().__init__(self.version)
 
 
 class BroodHistoryStore(Store[dict[str, Any]]):
     """The brood history file of a hive: older storage versions are migrated."""
 
+    async def async_load(self) -> dict[str, Any] | None:
+        """Load the file; raise UnsupportedBroodHistoryError when it has a newer version."""
+        try:
+            return await super().async_load()
+        except UnsupportedStorageVersionError as err:
+            # Home Assistant 2026.3 and later refuse a newer major version before the migration
+            raise UnsupportedBroodHistoryError(err.found_version) from err
+
     async def _async_migrate_func(
         self, old_major_version: int, old_minor_version: int, old_data: Any
     ) -> dict[str, Any]:
         """Migrate an older file; a newer one is left by a downgrade and can't be read."""
+        if old_major_version > BROOD_STORAGE_VERSION:
+            raise UnsupportedBroodHistoryError(old_major_version)
         # Only the major version changes with the format, so another minor version is newer
-        if old_major_version > BROOD_STORAGE_VERSION or old_minor_version != 1:
+        if old_minor_version != 1:
             raise UnsupportedBroodHistoryError(old_major_version, old_minor_version)
         # One step per format change, in order, so a file of any older version passes all
         if old_major_version <= 1:
@@ -368,8 +381,8 @@ class BroodTracker:
 
     def _hive_name(self) -> str:
         """Return the hive's device name as the user sees it."""
-        device = dr.async_get(self.hass).async_get_device(
-            connections={(dr.CONNECTION_BLUETOOTH, self.entry.unique_id or "")}
+        device = async_get_device_by_connection(
+            self.hass, (dr.CONNECTION_BLUETOOTH, self.entry.unique_id or ""), self.entry.entry_id
         )
         if device is None:
             return self.entry.title

@@ -35,6 +35,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.broodminder.brood import BroodBreak
+from custom_components.broodminder.compat import async_get_device_by_connection
 from custom_components.broodminder.const import (
     BROOD_SAMPLE_INTERVAL,
     CONF_MODEL,
@@ -171,9 +172,13 @@ def _entry_for(hass: HomeAssistant, address: str) -> ConfigEntry | None:
     )
 
 
-def _device_for(device_registry: dr.DeviceRegistry, address: str) -> dr.DeviceEntry | None:
+def _device_for(hass: HomeAssistant, address: str) -> dr.DeviceEntry | None:
     # The bluetooth processor entity replaces our identifiers, so look up by connection
-    return device_registry.async_get_device(connections={(dr.CONNECTION_BLUETOOTH, address)})
+    entry = _entry_for(hass, address)
+    assert entry is not None, address
+    return async_get_device_by_connection(
+        hass, (dr.CONNECTION_BLUETOOTH, address), entry.entry_id
+    )
 
 
 async def test_GIVEN_three_broodminders_WHEN_discovered_THEN_entries_devices_and_sensors_created(
@@ -203,7 +208,7 @@ async def test_GIVEN_three_broodminders_WHEN_discovered_THEN_entries_devices_and
         (SCALE_ADDRESS, "Scale W", "BroodMinder-Scale W 00:00:02"),
         (T_ADDRESS, "T", "BroodMinder-T 00:00:03"),
     ):
-        device = _device_for(device_registry, address)
+        device = _device_for(hass, address)
         assert device is not None, address
         assert device.name == name
         assert device.model == model
@@ -241,8 +246,8 @@ async def test_GIVEN_three_broodminders_WHEN_discovered_THEN_entries_devices_and
     assert hass.states.get(f"{t}_swarm_time").state == SWARM_TIME.isoformat()
 
     # Sensors of one device don't leak into another
-    th_device = _device_for(device_registry, TH_ADDRESS)
-    scale_device = _device_for(device_registry, SCALE_ADDRESS)
+    th_device = _device_for(hass, TH_ADDRESS)
+    scale_device = _device_for(hass, SCALE_ADDRESS)
     assert th_device.id != scale_device.id
 
 
@@ -1097,7 +1102,9 @@ async def test_GIVEN_version_1_brood_history_WHEN_hive_set_up_THEN_hours_migrate
 
 
 @pytest.mark.parametrize(
-    ("version", "minor_version"), [(3, 1), (2, 2)], ids=["newer_version", "other_minor_version"]
+    ("version", "minor_version", "logged_version"),
+    [(3, 1, "3"), (2, 2, "2.2")],
+    ids=["newer_version", "other_minor_version"],
 )
 async def test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged(
     hass: HomeAssistant,
@@ -1106,6 +1113,7 @@ async def test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and
     caplog: pytest.LogCaptureFixture,
     version: int,
     minor_version: int,
+    logged_version: str,
 ) -> None:
     """Verifies a file left by a newer version, before a downgrade, is replaced by a clean one."""
 
@@ -1123,7 +1131,7 @@ async def test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and
     assert entry.state is ConfigEntryState.LOADED
     assert hass.states.get(TH_BROOD).attributes["status"] == "not_enough_data"
     assert (
-        f"has storage version {version}.{minor_version}, newer than this version of the "
+        f"has storage version {logged_version}, newer than this version of the "
         "integration supports (2.1); starting with an empty brood history"
     ) in caplog.text
 

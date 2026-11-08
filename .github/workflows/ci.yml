@@ -19,22 +19,29 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install ruff
-        # Same version as requirements.txt, without installing Home Assistant
-        run: python -m pip install "$(grep '^ruff==' requirements.txt)"
+        # Same version as requirements/dev.txt, without installing Home Assistant
+        run: python -m pip install "$(grep '^ruff==' requirements/dev.txt)"
       - run: scripts/lint ci
 
   pytest:
-    name: Pytest
+    # Against the oldest supported Home Assistant (hacs.json) and the newest one the test plugin
+    # supports, each with its own Python: see requirements/
+    name: Pytest (Home Assistant ${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [minimum, latest]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements*.txt
+          enable-cache: true
+          cache-dependency-glob: requirements/*.txt
       - name: Install system packages
         # Same as the devcontainer
         run: sudo apt-get update && sudo apt-get install -y libpcap-dev
-      - run: scripts/setup
-      - run: pytest --cov=custom_components/broodminder --cov-branch --cov-report=term
+      - run: scripts/setup ${{ matrix.target }}
+      - run: >-
+          .venv-${{ matrix.target }}/bin/pytest
+          --cov=custom_components/broodminder --cov-branch --cov-report=term

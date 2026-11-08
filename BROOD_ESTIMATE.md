@@ -214,6 +214,7 @@ Each requirement has an ID for traceability to the [verification](#15-verificati
 | D32 | No backup platform: a backup holds the brood history of the last hourly save | Home Assistant saves no integration's storage before a backup; it only calls `async_pre_backup` of integrations with a `backup` platform. Without one, the backup lacks the samples since the last hourly save, at most 11. The hour in progress is in the backup with its first sample (the save comes after it, [5.1](#51-sampling)), so it still counts, from fewer samples. A restore loses the whole time between the backup and the restore, usually hours or days, so these minutes add little. | A `backup` platform whose `async_pre_backup` saves every hive's brood history, so the backup has the hour in progress: one more module and one more write per hive and backup. |
 | D33 | Migrations are chained steps, one per format change, applied in order and kept for good | HACS doesn't make users install every release, and an installation left alone for months skips several. Home Assistant's `Store` calls `_async_migrate_func` once, with the file's version, and expects data in the code's version back. Each step turns version N − 1 into version N and runs for every file older than version N, not only for version N − 1, so a file of any older version passes through every later step in turn (R29). A new format adds one step after the others; existing steps aren't changed or removed, because a file of their version can still turn up, from an installation that skipped releases or from an old backup (R28). Each step is a few lines. | A migration from the previous version only (a file two versions old fails the migration and starts clean, losing its hours and likely brood break); a direct migration from every older version to the current one (all of them rewritten at every format change); removing steps after some releases (a user who skips them loses the brood history). |
 | D34 | Check every stored field's type when the file is loaded, against the type its dataclass declares | `HourlyTemperatures(**data)` and `BroodBreak(**data)` accept any value. A `null` sum (how orjson writes NaN, which an outdoor state `nan` used to produce) failed later in the estimate at setup, outside the load guard: the hive's setup failed without a retry and the file was never replaced. Text in `since` failed in the sensor and left the hive without sensors. Checking at load keeps every bad file inside the R25 handling. | Catching errors wherever bad values are used; replacing bad values one by one with defaults (keeps a file of unknown origin). |
+| D35 | Detect a newer major version in `BroodHistoryStore.async_load` as well as in the migration | Since Home Assistant 2026.3, `Store` raises `UnsupportedStorageVersionError` for a file with a newer major version before it calls `_async_migrate_func`, so the migration never sees it; older versions down to the minimum (2025.9) still pass it to the migration. Without catching it, the error escaped the R25 handling and the hive failed to set up with all its sensors. `async_load` turns it into the same `UnsupportedBroodHistoryError` the migration raises, so both Home Assistant versions behave and log the same: the newer major version alone, since Home Assistant's error doesn't carry the minor one (R26). The import falls back for Home Assistant before 2026.3 (`compat.py`). | Passing a higher `max_readable_version` to `Store` (not accepted by Home Assistant before 2026.3); catching every `HomeAssistantError` (would also hide other load errors behind a "newer version" warning). |
 
 ## 5. Data collection
 
@@ -720,14 +721,16 @@ this table to the current one, not just the previous version, so a skipped relea
 | missing (a new hive) | empty brood history |
 | the code's version | used |
 | an older version | migrated version by version to the code's version, through every version in between, also those whose releases were never installed (R29, D33), and written back at once (Home Assistant's `Store` does this after a migration). Version 1 becomes `hours`, with an empty `brood_break` (R24). |
-| a newer version, or another `minor_version` (a downgrade) | not used: clean brood history and a warning logged. The next save, at the first sample, replaces the file by a clean one in the code's version (R26). |
+| a newer version, or another `minor_version` (a downgrade) | not used: clean brood history and a warning logged. The next save, at the first sample, replaces the file by a clean one in the code's version (R26). Home Assistant 2026.3 and later refuse a newer major version before the migration; that is handled the same way (D35). |
 | invalid JSON | Home Assistant's `Store` renames it to `<file>.corrupt.<time>`, logs an error and raises its own repair; clean brood history (R25) |
 | unexpected content (missing or wrong fields, or a value of the wrong type such as text or `null` for a number), or a migration that fails | clean brood history and a warning logged; replaced at the next save, at the first sample (R25, R31, D28, D34) |
 
 Log texts:
 
-- `Brood history of <hive> has storage version <major>.<minor>, newer than this version of the
-  integration supports (<BROOD_STORAGE_VERSION>.1); starting with an empty brood history`
+- `Brood history of <hive> has storage version <version>, newer than this version of the
+  integration supports (<BROOD_STORAGE_VERSION>.1); starting with an empty brood history`, where
+  `<version>` is the major version alone when it is newer (e.g. `3`), and `<major>.<minor>`
+  for another minor version (e.g. `2.2`) (D35)
 - `Brood history of <hive> could not be read (<error>); starting with an empty brood history`
 
 `<hive>` is the device name as in [11.2](#112-outdoor-temperature-unavailable). The first
@@ -771,7 +774,7 @@ changing versions does to the brood history and the entities:
 | 0.4.0 or earlier → 0.5.0 again | Entities and settings return. If the other version ran for more than about 6 hours, Brood shows unknown for about 18 hours; hours older than 48 hours are dropped. A likely brood break that had started is kept and ends the normal way. A count in progress continues if the other version ran for less than a day, and otherwise starts over (R22, D26). |
 | 0.5.0 → a development build that writes version 1 | That build can't read version 2 and predates R25: the hive fails to set up, with all its sensors. Install 0.5.0 again, or remove `.storage/broodminder.brood.<config entry id>`. |
 | Any older version → a later one, skipping releases in between | The file is migrated through the formats of the skipped releases in one go: hours and likely brood break kept, as if each release had been installed in turn (R29, D33). |
-| A later version with a newer format → 0.5.0 | Detected by the version in the file: the hive sets up with a clean brood history, logs a warning and replaces the newer file (R26). |
+| A later version with a newer format → 0.5.0 | Detected by the version in the file: the hive sets up with a clean brood history, logs a warning and replaces the newer file (R26). On every supported Home Assistant version, also 2026.3 and later, which check the version before the migration (D35). |
 
 ### 12.5 Backup and restore
 
@@ -862,7 +865,9 @@ start and end in a real hive.
 
 ### 15.1 Automated tests
 
-Run with `scripts/test`; `scripts/lint` must be clean.
+Run with `scripts/test`, which runs every test against both the oldest supported Home
+Assistant (2025.9, the `homeassistant` version in `hacs.json`) and the newest one the test
+plugin supports; `scripts/lint` must be clean.
 
 | Requirement | Tests |
 |---|---|
@@ -895,7 +900,7 @@ Likely brood break and the brood history file:
 | R25, D28 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (wrong fields, no `brood_break`, not an object) |
 | R30 | `test_GIVEN_outdoor_state_WHEN_read_THEN_temperature_in_celsius` (sensor `nan` and `inf`, weather `nan`) |
 | R31, D34 | `test_GIVEN_unreadable_brood_history_WHEN_set_up_THEN_sensors_work_and_warning_logged` (`null` sum, text `since`, `true` count), `test_GIVEN_brood_history_with_whole_number_sums_WHEN_set_up_THEN_hours_used` |
-| R26, D30 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`) |
+| R26, D30, D35 | `test_GIVEN_newer_brood_history_version_WHEN_set_up_THEN_clean_file_and_warning_logged` (newer version, other `minor_version`; D35 by the run against the latest Home Assistant) |
 | D29 | `test_GIVEN_no_break_change_WHEN_samples_THEN_break_state_not_written` |
 | R28, D32 | `test_GIVEN_backup_4_hours_old_WHEN_restored_THEN_estimate_at_once_and_count_continues`, `test_GIVEN_backup_20_hours_old_WHEN_restored_THEN_count_continues_once_window_refills`, `test_GIVEN_backup_2_days_old_WHEN_restored_THEN_break_kept_and_count_starts_over` (a brood history file as of a backup, with the hour in progress at its first sample) |
 
