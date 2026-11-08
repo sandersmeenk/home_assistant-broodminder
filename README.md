@@ -203,7 +203,7 @@ Each T and TH hive has its own settings: go to **Settings** > **Devices & servic
 **BroodMinder** and select **Configure** on the hive.
 
 * **Sensor position**
-  * *On top of the frames* (default): BroodMinder's standard placement, on the top bars near the
+  * *On top of the frames* (recommended): BroodMinder's standard placement, on the top bars near the
     middle of the brood box. The temperature there drops off gradually as the brood nest shrinks
     or moves away, so the estimate rises and falls with the amount of brood.
   * *In the comb, between frames at brood height*: in the comb, the sensor reads about 35 °C
@@ -243,6 +243,8 @@ When there's no outdoor temperature, Home Assistant shows a repair under **Setti
 * `hours_used`: the number of hours in the estimate.
 * `outdoor_entity`: the outdoor temperature in use.
 * `sensor_position`: the sensor position from the settings.
+
+Note: this feature has been developed in the autumn of 2026 during a brood break, so it has not been tested extensively to determine its accuracy. If you have feedback, good or bad, feel free to open an issue at https://github.com/sandersmeenk/home_assistant-broodminder/issues and let us know. We'll be happy to use it to improve it. 
 
 ### Likely brood break (experimental)
 
@@ -302,6 +304,7 @@ automation:
             Check a frame for capped brood before treating.
 ```
 
+Note: this feature has been developed in the autumn of 2026 during a brood break, so it has not been tested extensively to determine its accuracy. If you have feedback, good or bad, feel free to open an issue at https://github.com/sandersmeenk/home_assistant-broodminder/issues and let us know. We'll be happy to use it to improve it. 
 
 ## Installation and setup
 
