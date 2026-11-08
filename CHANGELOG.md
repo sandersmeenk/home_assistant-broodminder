@@ -8,6 +8,8 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For a more detailed description of the features, see the README.md
 
 
+## [0.6.0] - Unreleased
+
 ## [0.5.0] - 2026-11-08
 
 ### Added
@@ -147,6 +149,7 @@ First release.
 - Sensors for battery, temperature, realtime temperature, humidity, weight (per scale side
   and total), sample count, swarm state and swarm time, depending on the BroodMinder model.
 
+[0.6.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.5.0...develop
 [0.5.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/sandersmeenk/home_assistant-broodminder/compare/0.2.0...0.3.0
