@@ -79,19 +79,19 @@ BroodMinder model number.
 | Likely brood break since | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
 | Humidity                 |        |        | ✓       | ✓       | ✓      | ✓      |            | ✓        |             | ✓                                              |
 | Temperature              | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Realtime Temp            |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
+| Realtime temp            |        | ✓      |         | ✓       |        | ✓      | ✓          | ✓        |             |                                                |
 | Sample count             | ✓      | ✓      | ✓       | ✓       | ✓      | ✓      | ✓          | ✓        | ✓           | ✓                                              |
-| Swarm State              | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
-| Swarm Time               | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
-| Weight Left              |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
-| Weight Right             |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
-| Weight Left 2            |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
-| Weight Right 2           |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
-| Weight Realtime          |        |        |         |         | ✓ ¹    | ✓      | ✓          | ✓        |             |                                                |
+| Swarm state              | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Swarm time               | ✓      | ✓      | ✓       | ✓       |        |        |            |          |             |                                                |
+| Weight left              |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
+| Weight right             |        |        |         |         | ✓      | ✓      | ✓          | ✓        |             |                                                |
+| Weight left 2            |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
+| Weight right 2           |        |        |         |         |        | ✓      | ✓          | ✓        |             |                                                |
+| Weight realtime          |        |        |         |         | ✓ ¹    | ✓      | ✓          | ✓        |             |                                                |
 
 ¹ The original BroodMinder-W (model 43) doesn't send a total weight. It sits under one side of
-the hive and measures half its weight, so the integration calculates Weight Realtime as
-2 × (Weight Left + Weight Right). It only appears when both sides report a weight.
+the hive and measures half its weight, so the integration calculates Weight realtime as
+2 × (Weight left + Weight right). It only appears when both sides report a weight.
 
 The SubHub, hubs and BeeDar haven't been tested: their sensors use the standard
 advertisement format, which these devices may not follow.
@@ -142,7 +142,7 @@ about 15 to 20 minutes after a restart.
   The state is the numeric code below; the `description` attribute holds its description
   (*Unknown* for an undocumented code).
   From the [documentation](https://doc.mybroodminder.com/31_sensors_T_TH):
-  | Swarm State  | Description                                                    |
+  | Swarm state  | Description                                                    |
   |--------------|----------------------------------------------------------------|
   | 0            | Stopped                                                        |
   | 1            | Stopped - initialization complete                              |

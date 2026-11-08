@@ -612,6 +612,31 @@ async def test_GIVEN_saved_sensor_of_older_build_WHEN_restarted_THEN_not_created
     assert _battery(hass) == ("90", 90, None)
 
 
+async def test_GIVEN_saved_names_of_older_build_WHEN_restarted_THEN_new_names_same_entity_ids(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """Verifies names an older build saved in title case show in sentence case after a restart."""
+
+    await _setup_device(hass, T_ADDRESS, _t_payload())
+    entry = _entry_for(hass, T_ADDRESS)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Builds before 0.5.0 saved the names in title case
+    saved = next(
+        iter(hass.data[PASSIVE_UPDATE_PROCESSOR].all_restore_data[entry.entry_id].values())
+    )
+    swarm_time = PassiveBluetoothEntityKey("swarm_time", T_ADDRESS).to_string()
+    saved["entity_names"][swarm_time] = "Swarm Time"
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = "sensor.broodminder_t_00_00_03_swarm_time"
+    unique_id = f"{T_ADDRESS}-swarm_time-{T_ADDRESS}"
+    assert entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id) == entity_id
+    assert hass.states.get(entity_id).attributes["friendly_name"].endswith(" Swarm time")
+
+
 TH_BROOD = "sensor.broodminder_th_00_00_01_brood"
 T_BROOD = "sensor.broodminder_t_00_00_03_brood"
 TH_BROOD_BREAK = "sensor.broodminder_th_00_00_01_likely_brood_break_since"

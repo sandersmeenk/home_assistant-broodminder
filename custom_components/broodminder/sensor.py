@@ -136,23 +136,25 @@ class BMDescriptions:
 
 DESCRIPTIONS = BMDescriptions()
 
+# Names of the entities the processor creates, in sentence case like Home Assistant's own; the
+# entity ID and unique ID come from the key, so a name change doesn't break them
+ENTITY_NAMES: dict[str, str] = {
+    SENSOR_TEMP: "Temperature",
+    SENSOR_TEMP_RT: "Realtime temp",
+    SENSOR_HUM: "Humidity",
+    SENSOR_BATT: "Battery",
+    SENSOR_SAMPLE_COUNT: "Sample count",
+    SENSOR_WEIGHT_L: "Weight left",
+    SENSOR_WEIGHT_R: "Weight right",
+    SENSOR_WEIGHT_L2: "Weight left 2",
+    SENSOR_WEIGHT_R2: "Weight right 2",
+    SENSOR_WEIGHT_REALTIME: "Weight realtime",
+    SENSOR_SWARM_STATE: "Swarm state",
+    SENSOR_SWARM_TIME: "Swarm time",
+}
+
 # Keys of the entities the processor creates; restored data may hold keys an older build had
-PROCESSOR_ENTITY_KEYS = frozenset(
-    {
-        SENSOR_TEMP,
-        SENSOR_TEMP_RT,
-        SENSOR_HUM,
-        SENSOR_BATT,
-        SENSOR_SAMPLE_COUNT,
-        SENSOR_WEIGHT_L,
-        SENSOR_WEIGHT_R,
-        SENSOR_WEIGHT_L2,
-        SENSOR_WEIGHT_R2,
-        SENSOR_WEIGHT_REALTIME,
-        SENSOR_SWARM_STATE,
-        SENSOR_SWARM_TIME,
-    }
-)
+PROCESSOR_ENTITY_KEYS = frozenset(ENTITY_NAMES)
 
 
 def swarm_state_description(swarm_state: int) -> str:
@@ -182,69 +184,50 @@ def sensor_update_to_bluetooth_data_update(
     entity_data: dict[PassiveBluetoothEntityKey, Any] = {}
     entity_names: dict[PassiveBluetoothEntityKey, str | None] = {}
 
-    def add(key: str, value: Any, description: SensorEntityDescription, name: str) -> None:
+    def add(key: str, value: Any, description: SensorEntityDescription) -> None:
         ek = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
         entity_descriptions[ek] = description
         entity_data[ek] = value
-        entity_names[ek] = name
+        entity_names[ek] = ENTITY_NAMES[key]
 
     # Temperature
     if SENSOR_TEMP in entities:
-        add(SENSOR_TEMP, entities[SENSOR_TEMP], DESCRIPTIONS.temperature, "Temperature")
+        add(SENSOR_TEMP, entities[SENSOR_TEMP], DESCRIPTIONS.temperature)
     if SENSOR_TEMP_RT in entities:
-        add(
-            SENSOR_TEMP_RT, entities[SENSOR_TEMP_RT], DESCRIPTIONS.temperature_rt, "Realtime Temp"
-        )
+        add(SENSOR_TEMP_RT, entities[SENSOR_TEMP_RT], DESCRIPTIONS.temperature_rt)
 
     # Humidity / Battery / sample count
     if SENSOR_HUM in entities:
-        add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity, "Humidity")
+        add(SENSOR_HUM, entities[SENSOR_HUM], DESCRIPTIONS.humidity)
     if BATTERY_VOLTAGE_BASED in entities or BATTERY_CHARGE_REMAINING in entities:
         # The Battery entity keeps both kinds of reading; they get no entities of their own
         battery = PassiveBluetoothEntityKey(key=SENSOR_BATT, device_id=parsed.device_id)
         entity_descriptions[battery] = DESCRIPTIONS.battery
-        entity_names[battery] = "Battery"
+        entity_names[battery] = ENTITY_NAMES[SENSOR_BATT]
         for key in (BATTERY_VOLTAGE_BASED, BATTERY_CHARGE_REMAINING):
             if key in entities:
                 reading = PassiveBluetoothEntityKey(key=key, device_id=parsed.device_id)
                 entity_data[reading] = entities[key]
     if SENSOR_SAMPLE_COUNT in entities:
-        add(
-            SENSOR_SAMPLE_COUNT,
-            entities[SENSOR_SAMPLE_COUNT],
-            DESCRIPTIONS.sample_count,
-            "Sample count",
-        )
+        add(SENSOR_SAMPLE_COUNT, entities[SENSOR_SAMPLE_COUNT], DESCRIPTIONS.sample_count)
 
     # Weights
     if SENSOR_WEIGHT_L in entities:
-        add(SENSOR_WEIGHT_L, entities[SENSOR_WEIGHT_L], DESCRIPTIONS.weight_l, "Weight Left")
+        add(SENSOR_WEIGHT_L, entities[SENSOR_WEIGHT_L], DESCRIPTIONS.weight_l)
     if SENSOR_WEIGHT_R in entities:
-        add(SENSOR_WEIGHT_R, entities[SENSOR_WEIGHT_R], DESCRIPTIONS.weight_r, "Weight Right")
+        add(SENSOR_WEIGHT_R, entities[SENSOR_WEIGHT_R], DESCRIPTIONS.weight_r)
     if SENSOR_WEIGHT_L2 in entities:
-        add(SENSOR_WEIGHT_L2, entities[SENSOR_WEIGHT_L2], DESCRIPTIONS.weight_l2, "Weight Left 2")
+        add(SENSOR_WEIGHT_L2, entities[SENSOR_WEIGHT_L2], DESCRIPTIONS.weight_l2)
     if SENSOR_WEIGHT_R2 in entities:
-        add(
-            SENSOR_WEIGHT_R2, entities[SENSOR_WEIGHT_R2], DESCRIPTIONS.weight_r2, "Weight Right 2"
-        )
+        add(SENSOR_WEIGHT_R2, entities[SENSOR_WEIGHT_R2], DESCRIPTIONS.weight_r2)
     if SENSOR_WEIGHT_REALTIME in entities:
-        add(
-            SENSOR_WEIGHT_REALTIME,
-            entities[SENSOR_WEIGHT_REALTIME],
-            DESCRIPTIONS.weight_rt,
-            "Weight Realtime",
-        )
+        add(SENSOR_WEIGHT_REALTIME, entities[SENSOR_WEIGHT_REALTIME], DESCRIPTIONS.weight_rt)
 
     # Swarm state & Swarm time
     if SENSOR_SWARM_STATE in entities:
-        add(
-            SENSOR_SWARM_STATE,
-            entities[SENSOR_SWARM_STATE],
-            DESCRIPTIONS.swarm_state,
-            "Swarm State",
-        )
+        add(SENSOR_SWARM_STATE, entities[SENSOR_SWARM_STATE], DESCRIPTIONS.swarm_state)
     if SENSOR_SWARM_TIME in entities:
-        add(SENSOR_SWARM_TIME, entities[SENSOR_SWARM_TIME], DESCRIPTIONS.swarm_time, "Swarm Time")
+        add(SENSOR_SWARM_TIME, entities[SENSOR_SWARM_TIME], DESCRIPTIONS.swarm_time)
 
     return PassiveBluetoothDataUpdate(
         devices={parsed.device_id: device},
@@ -384,6 +367,16 @@ class BroodMinderSensorEntity(
     SensorEntity,
 ):
     """Entity for a BroodMinder reading."""
+
+    def __init__(
+        self,
+        processor: PassiveBluetoothDataProcessor[Any | None, ManufacturerData],
+        entity_key: PassiveBluetoothEntityKey,
+        description: SensorEntityDescription,
+    ) -> None:
+        """Create the entity with the current name, not one restored from an older build."""
+        super().__init__(processor, entity_key, description)
+        self._attr_name = ENTITY_NAMES.get(entity_key.key, self._attr_name)
 
     # Provide the current value from the processor
     @property

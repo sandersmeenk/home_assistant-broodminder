@@ -36,6 +36,10 @@ For a more detailed description of the features, see the README.md
   100%. Battery keeps its last value.
 - After a restart of Home Assistant, BroodMinder sensors show their last values straight away,
   instead of being unavailable until each BroodMinder broadcasts again.
+- Sensor names only capitalise their first word, like Home Assistant's own sensors: for example
+  Swarm time instead of Swarm Time, and Weight left instead of Weight Left. Entity IDs stay the
+  same, so automations, scripts and dashboards keep working. Names you changed yourself are
+  kept.
 
 ### Fixed
 
