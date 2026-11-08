@@ -38,7 +38,7 @@ supports two ends of a range of Home Assistant versions, and everything is teste
   `hacs.json`.
 - **latest** — the newest version `pytest-homeassistant-custom-component` supports, on the Python
   version that one needs (3.14). `scripts/bump_latest.py` writes `requirements/latest.txt`;
-  don't edit it by hand.
+  don't edit it by hand. A weekly workflow runs it and opens a pull request (see CI).
 
 Both include `requirements/dev.txt`, the shared tools. Each plugin release is built against one
 Home Assistant release (e.g. `0.13.281` ↔ `2025.9.4`), so the two always change together. The
@@ -112,6 +112,11 @@ Before finishing a change, run `scripts/lint` and `scripts/test`, and make sure 
 GitHub Actions run on pushes to `main` and `develop` and on pull requests:
 
 - `.github/workflows/ci.yml` — `scripts/lint ci`, and pytest against minimum and latest.
+- `.github/workflows/bump-latest.yml` — weekly (and manually): runs `scripts/bump_latest.py` on
+  `develop` and, when the latest Home Assistant changed, opens a pull request and starts CI on
+  it. GitHub only lets it open the pull request with "Allow GitHub Actions to create and approve
+  pull requests" enabled in the repository settings; the schedule only runs once the workflow is
+  on `main`.
 - `.github/workflows/release.yml` — GitHub release on version tags (see Changelog).
 - `.github/workflows/validate.yml` — hassfest and HACS validation (also weekly). Hassfest
   requires `manifest.json` keys as `domain`, `name`, then alphabetical.
