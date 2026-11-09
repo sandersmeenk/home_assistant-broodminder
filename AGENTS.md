@@ -20,6 +20,8 @@ BroodMinder beehive sensors from Bluetooth LE advertisements. It's distributed v
   - `const.py` — payload indices, model IDs, entity keys, brood estimate and brood break
     constants
   - `compat.py` — differences between the supported Home Assistant versions (see below)
+  - `brand/` — the integration's icon (`icon.png` 256×256, `icon@2x.png` 512×512), which Home
+    Assistant 2026.3+ serves from here; older versions only use home-assistant/brands
 - `BROOD_ESTIMATE.md` — technical specification of the brood estimate and likely brood break
   (see below)
 - `tests/` — pytest suite

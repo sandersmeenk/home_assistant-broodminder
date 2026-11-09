@@ -27,5 +27,5 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # The integration isn't in home-assistant/brands
+          # The integration isn't in home-assistant/brands; it ships its icon in brand/
           ignore: brands

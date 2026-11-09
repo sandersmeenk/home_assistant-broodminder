@@ -10,6 +10,12 @@ For a more detailed description of the features, see the README.md
 
 ## [0.6.0] - Unreleased
 
+### Added
+
+- The integration has its own icon, the BroodMinder hive, instead of "icon not available" on
+  the integration page in Home Assistant. It needs Home Assistant 2026.3 or newer; older
+  versions keep showing "icon not available".
+
 ## [0.5.0] - 2026-11-08
 
 ### Added
