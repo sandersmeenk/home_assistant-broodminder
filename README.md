@@ -246,7 +246,7 @@ When there's no outdoor temperature, Home Assistant shows a repair under **Setti
 
 Note: this feature has been developed in the autumn of 2026 during a brood break, so it has not been tested extensively to determine its accuracy. If you have feedback, good or bad, feel free to open an issue at https://github.com/sandersmeenk/home_assistant-broodminder/issues and let us know. We'll be happy to use it to improve it. 
 
-### Likely brood break (experimental)
+## Likely brood break (experimental)
 
 T and TH hives also get a **Likely brood break since** sensor. It shows when a likely brood
 break started, and *unknown* when there's no likely brood break. Home Assistant shows the date
